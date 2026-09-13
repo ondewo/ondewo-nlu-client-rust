@@ -12,7 +12,11 @@ name: release
 on:
   push:
     tags:
-      - "[0-9]*.[0-9]*.[0-9]*"
+      # GitHub's filter-pattern `+` is "one or more of the PRECEDING character", so `[0-9]+` is a
+      # run of digits - the same shape as the documented `v[12].[0-9]+.[0-9]+`. `[0-9]*` would be
+      # a digit followed by anything and would let `7abc.1.0` in. Quoted because a pattern
+      # containing `[` has to be.
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 # Never let two runs of the same tag publish at once.
 concurrency:

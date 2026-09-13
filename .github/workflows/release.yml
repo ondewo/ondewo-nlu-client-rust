@@ -90,10 +90,15 @@ jobs:
 
       # ci.yml runs on branches, not on tags, so the tagged commit is compiled and tested here
       # rather than trusted. --all-targets also compiles examples/.
+      #
+      # --locked is what turns a stale lockfile into a clear error here instead of an opaque one at
+      # the very end: `make release` commits Cargo.lock alongside the version bump, and if that ever
+      # drifts, an unlocked build would silently rewrite the lockfile, leaving the tree dirty and
+      # `cargo publish` refusing to upload with no hint as to why.
       - name: Build and test the tagged commit
         run: |
-          cargo build --release
-          cargo test --all-targets
+          cargo build --release --locked
+          cargo test --all-targets --locked
 
       # The same credential-free gate ci.yml runs: the manifest fields crates.io requires, the
       # file list, a full package + verify build, and the crates.io size limit.

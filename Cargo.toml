@@ -13,7 +13,7 @@
 # the Makefile - do not edit it by hand.
 [package]
 name = "ondewo-nlu-client"
-version = "0.1.0"
+version = "7.1.0"
 edition = "2021"
 rust-version = "1.88"
 description = "ONDEWO NLU (Natural Language Understanding) gRPC client library, generated from the ondewo-nlu-api protocol buffer definitions"

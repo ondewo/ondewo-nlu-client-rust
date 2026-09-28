@@ -47,7 +47,7 @@ ONDEWO_NLU_VERSION=7.1.0
 ONDEWO_NLU_API_GIT_BRANCH=tags/7.1.0
 # The compiler has to be 5.15.2 or newer: an older image builds its crate without the README.md
 # that Cargo.toml's `readme` names, and its `cargo package` fails every generation run.
-ONDEWO_PROTO_COMPILER_GIT_BRANCH=tags/5.15.1
+ONDEWO_PROTO_COMPILER_GIT_BRANCH=tags/5.15.2
 
 # Submodule directories - these MUST match the paths in .gitmodules
 ONDEWO_NLU_API_DIR=ondewo-nlu-api

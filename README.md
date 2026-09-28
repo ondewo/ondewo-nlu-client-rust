@@ -47,7 +47,7 @@ or declare it in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ondewo-nlu-client = "0.1"
+ondewo-nlu-client = "~7.1"
 tonic = "0.14"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -72,6 +72,10 @@ git clone --recurse-submodules git@github.com:ondewo/ondewo-nlu-client-rust.git
 cd ondewo-nlu-client-rust
 make setup_developer_environment_locally
 ```
+
+The local rust toolchain is only needed by the plain cargo targets (`make test`, `make coverage`,
+...). `make build`, `make release` and every `*_via_docker` target run cargo in the utils image
+built from `Dockerfile.utils`, so for those `docker`, `git`, `make`, `perl` and `curl` are enough.
 
 ## Usage
 
@@ -131,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 │   └── generated_messages.rs
 ├── Cargo.toml                <----- crate manifest AND the generator's crate template
 ├── Cargo.lock
+├── Dockerfile.utils          <----- the utils image: rust toolchain + GitHub CLI for build and release
 ├── Makefile
 └── README.md
 ```
@@ -141,9 +146,9 @@ for consumers of the crate.
 
 ## Regenerating the Stubs
 
-Regeneration needs `docker`, `git` and `make` - the rust toolchain, `protoc` and the protoc
-plugins all live inside the compiler image, and generation itself needs no network once that image
-is built.
+Regeneration needs `docker`, `git`, `make` and `perl` - `protoc` and the protoc plugins live inside
+the compiler image, the rust toolchain inside the utils image, and generation itself needs no
+network once the compiler image is built.
 
 ```bash
 make build
@@ -155,11 +160,13 @@ is the whole pipeline:
 1. `checkout_defined_submodule_versions` - checks out the pins at the top of the `Makefile`
    (`ONDEWO_NLU_API_GIT_BRANCH` and `ONDEWO_PROTO_COMPILER_GIT_BRANCH`)
 1. `build_compiler` - builds `ondewo-rust-proto-compiler:latest` from the submodule
-1. `update_cargo_version` - writes `ONDEWO_NLU_VERSION` into `Cargo.toml`
+1. `update_cargo_version` - writes `ONDEWO_NLU_VERSION` into `Cargo.toml`, the crate's own entry
+   in `Cargo.lock` and the install snippet above
 1. `generate_ondewo_protos` - runs the image over `ondewo-nlu-api/ondewo` and writes `src/api`,
    `Cargo.toml`, `Cargo.lock` and `crate-dist/` back into this repository
 1. `check_build` - asserts that a generated stub exists for every proto package
-1. `cargo_build` - compiles the crate
+1. `cargo_build_via_docker` - builds the utils image (`ondewo-nlu-client-utils-rust:<version>`, rust
+   toolchain + GitHub CLI) and compiles the crate in it
 
 The image tag is the only contract between this repository and the compiler, so a compiler change
 can be tried out without touching the submodule pin: build the tag from a compiler working tree
@@ -172,6 +179,7 @@ can be tried out without touching the submodule pin: build the tag from a compil
 
 ```bash
 make test              # cargo test --all-targets
+make test_via_docker   # the same in the utils image - no local rust toolchain needed
 make coverage          # hand-written line coverage, gated at 100%
 make cargo_fmt_check   # rustfmt over the HAND-WRITTEN sources only
 make cargo_doc         # cargo doc --no-deps
@@ -198,49 +206,73 @@ hand-written usage snippet therefore lives in `examples/`, where `cargo test` st
 
 ## Release
 
-Releases are cut from the `Makefile`. Bump `ONDEWO_NLU_VERSION`, add the matching
-entry to `RELEASE.md`, then:
+A release runs entirely on the release host, driven by the `Makefile`. CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) only tests and lints: it never packages,
+publishes or reads a secret. Bump `ONDEWO_NLU_VERSION`, add the matching entry to `RELEASE.md`,
+then:
 
 ```bash
 make ondewo_release
 ```
 
-which checks that the release branch and tag do not exist yet (`spc`), pulls the credentials from
-the `ondewo-devops-accounts` repository and runs `make release` with them: build, commit, release
-branch, release tag and the GitHub release.
+It writes the version into `Cargo.toml`, `Cargo.lock` and the install snippet
+(`update_cargo_version`), checks that the release branch and tag do not exist yet and that
+`Cargo.toml` carries the version (`spc`), clones the `ondewo-devops-accounts` repository and runs
+`make release` with exactly two credentials from it. That repository is the only place they live:
 
-### Publishing to crates.io
+| Variable | File in `ondewo-devops-accounts` | Used for |
+| --- | --- | --- |
+| `GITHUB_GH_TOKEN` | `account_github.env` | the GitHub release (`gh`) |
+| `CARGO_REGISTRY_TOKEN` | `account_cargo.env` | the crates.io upload (`cargo publish`) - needs the **publish-update** scope |
 
-The upload is **not** done by `make release`. Pushing the release tag starts
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which asserts that the tag
-matches the version in `Cargo.toml` and that the generated stubs are committed, builds and tests
-the tagged commit, re-runs the packaging dry run and only then runs `make publish_crate` with the
-`CARGO_REGISTRY_TOKEN` repository secret. Keeping the single upload there is deliberate: a second
-publisher inside `make release` would race the workflow, and the loser would die on *crate version
-already uploaded*.
+`make release` then runs, in this order:
 
-The workflow refuses to start work when the secret is unset, rather than reaching the upload with
-an empty token, so a missing credential is a red run that names it and not a green run that
-published nothing. Two operator tasks are therefore one-time prerequisites:
+1. **Checks, before anything is pushed** - both tokens are set; GitHub accepts `GITHUB_GH_TOKEN`
+   and it may push to this repository (`gh auth login` and `gh api` in the utils image,
+   `validate_release_credentials`); crates.io does not have the version yet (its public API, no
+   credential); `RELEASE.md` has the entry.
+1. **Build, tests and packaging dry run**, in docker - `make build`, `make test_via_docker` and
+   `make publish_crate_dry_run_via_docker`.
+1. **Commit** `PREPARING FOR RELEASE <version>`, `Cargo.lock` included, and a check that nothing
+   was left uncommitted: `cargo publish` uploads only a committed tree.
+1. **Push** `master`, the `release/<version>` branch and the `<version>` tag.
+1. **crates.io upload** - `cargo publish --locked` in the utils image, from the tagged commit and the
+   `Cargo.lock` it carries.
+1. **GitHub release** - last, so that one only exists for a complete release.
 
-* an API token from <https://crates.io/settings/tokens> with the **publish-new** and
-  **publish-update** scopes, stored as the repository secret `CARGO_REGISTRY_TOKEN` under
-  *Settings → Secrets and variables → Actions*,
-* the same token in `account_cargo.env` of the `ondewo-devops-accounts` repository, which is what
-  the manual fallback reads.
+`make release_all_clients` in [ondewo-nlu-api](https://github.com/ondewo/ondewo-nlu-api) runs this
+same `make ondewo_release` after it has added the `RELEASE.md` entry and set `ONDEWO_NLU_VERSION`
+and both submodule pins in the `Makefile`.
 
-That fallback is:
+The release host needs only `make`, `git` (with SSH access to GitHub and Bitbucket), `docker`,
+`perl` and `curl`. The stubs are generated in the compiler image; cargo and the GitHub CLI run in
+the utils image built from `Dockerfile.utils`, as the invoking user and with this repository
+mounted, so every build output lands in the working tree and none of it is owned by root.
+
+### When a release stops after its tag push
+
+`CARGO_REGISTRY_TOKEN` is only checked for presence before the push: crates.io documents no
+read-only endpoint that accepts a publish-scoped token, so an expired token, or one without the
+publish-update scope, first fails at the upload - after the tag is out. A GitHub outage can do the
+same to the GitHub release. `spc` then refuses to run `make ondewo_release` again, because the
+branch and the tag exist. Fix the cause, then run this in the checkout the release left behind
+(on `release/<version>`), or in a fresh clone of the release tag:
 
 ```bash
-make ondewo_publish_crate   # clones devops-accounts, runs publish_crate with the token from it
+make ondewo_release_publish   # the crates.io upload, then the GitHub release, with the devops-accounts credentials
 ```
 
-Everything about the release except the upload itself is exercised without any credential, both
-locally and on every CI push:
+It is the same code path as the end of `make release`, and it can be run again: a version
+crates.io already has is skipped, not uploaded twice.
+
+### Checking the packaging without releasing
+
+The whole packaging path except the upload runs without any credential:
 
 ```bash
-make check_crate_metadata     # the manifest fields crates.io requires
-make publish_crate_dry_run    # + the file list, a full package/verify build, the 10 MiB limit
+make check_crate_metadata               # the manifest fields crates.io requires
+make publish_crate_dry_run              # + the file list, a full package/verify build, the 10 MiB limit
+make publish_crate_dry_run_via_docker   # the same in the utils image - no local rust toolchain needed
 ```
 
 ## Support

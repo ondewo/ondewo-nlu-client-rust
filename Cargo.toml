@@ -34,6 +34,7 @@ exclude = [
   "crate-dist/",
   ".proto-input/",
   ".github/",
+  "Dockerfile.utils",
 ]
 
 [lib]

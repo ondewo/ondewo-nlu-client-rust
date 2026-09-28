@@ -1,0 +1,29 @@
+# The utils image of ondewo-nlu-client-rust: the rust toolchain and the GitHub CLI, so that a build or a
+# release needs only make, git, docker, perl and curl on the host. `make build_utils_docker_image` tags it
+# IMAGE_UTILS_NAME; every *_via_docker* target of the Makefile runs a plain target of that same Makefile
+# in it through UTILS_DOCKER_RUN.
+#
+# Nothing is copied in: UTILS_DOCKER_RUN MOUNTS the repository at /home/ondewo and runs the container as
+# the invoking user, so build output lands in the working tree and is not owned by root.
+#
+# 1.88 is the crate's `rust-version` (Cargo.toml) - keep the two in step, so every release proves the
+# crate still builds on the oldest compiler it claims to support.
+FROM rust:1.88.0-slim-bookworm
+
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The tools the Makefile's recipes assume (make, perl for the release-notes slice, git, curl) plus gh,
+# installed from its own apt repository the way the python and js client images install it. The base
+# image already carries gcc, which ring (tonic's TLS backend) needs to compile.
+RUN apt-get update -qq \
+  && apt-get install -qq -y --no-install-recommends ca-certificates curl git make perl \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update -qq \
+  && apt-get install -qq -y --no-install-recommends gh \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+WORKDIR /home/ondewo/

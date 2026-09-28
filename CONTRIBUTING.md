@@ -52,10 +52,14 @@ Run the same gates CI runs:
 
 ```bash
 make test
+make coverage
 make cargo_fmt_check
 make cargo_doc
 make precommit_hooks_run_all_files
 ```
+
+The cargo targets need a local rust toolchain (`make setup_developer_environment_locally`). Without one,
+`make test_via_docker` runs the test suite in the utils image built from `Dockerfile.utils`.
 
 A change that regenerates the stubs should also pass `make check_build`, which asserts that a
 generated stub exists for every proto package of the API submodule.

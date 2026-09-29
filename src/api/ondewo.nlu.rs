@@ -1014,6 +1014,8 @@ pub mod operation_metadata {
         RemoveRagCrawlerResultFromDataset = 12,
         /// change the embedding model of dataset that already contains parsed documents
         ChangeDatasetEmbeddingModel = 13,
+        /// re-parse of all documents in a dataset
+        ReparseDataset = 14,
     }
     impl OperationType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -1036,6 +1038,7 @@ pub mod operation_metadata {
                 Self::AddRagCrawlerResultToDataset => "ADD_RAG_CRAWLER_RESULT_TO_DATASET",
                 Self::RemoveRagCrawlerResultFromDataset => "REMOVE_RAG_CRAWLER_RESULT_FROM_DATASET",
                 Self::ChangeDatasetEmbeddingModel => "CHANGE_DATASET_EMBEDDING_MODEL",
+                Self::ReparseDataset => "REPARSE_DATASET",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1055,6 +1058,7 @@ pub mod operation_metadata {
                 "ADD_RAG_CRAWLER_RESULT_TO_DATASET" => Some(Self::AddRagCrawlerResultToDataset),
                 "REMOVE_RAG_CRAWLER_RESULT_FROM_DATASET" => Some(Self::RemoveRagCrawlerResultFromDataset),
                 "CHANGE_DATASET_EMBEDDING_MODEL" => Some(Self::ChangeDatasetEmbeddingModel),
+                "REPARSE_DATASET" => Some(Self::ReparseDataset),
                 _ => None,
             }
         }

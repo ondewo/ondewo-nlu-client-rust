@@ -18171,7 +18171,7 @@ pub struct RagCrawlerConfig {
     /// Optional. Concurrency and pacing controls for crawler requests.
     #[prost(message, optional, tag="1")]
     pub concurrency_config: ::core::option::Option<RagCrawlerConcurrencyConfig>,
-    /// Optional. Deep crawler behavior (enable + depth/pages/scoring/filter chain).
+    /// Optional. Deep crawler behavior (enable + depth/scoring/filter chain).
     #[prost(message, optional, tag="2")]
     pub deep_crawler_config: ::core::option::Option<RagCrawlerDeepCrawlerConfig>,
     /// Optional. Structured output configuration (format + metadata policy).
@@ -18183,6 +18183,9 @@ pub struct RagCrawlerConfig {
     /// Optional. Incremental crawling: reuse unchanged pages from the previous run instead of re-fetching them.
     #[prost(message, optional, tag="5")]
     pub incremental_config: ::core::option::Option<RagCrawlerIncrementalConfig>,
+    /// Optional. Hard cap on pages fetched successfully in this run; <code>0</code> means unlimited.
+    #[prost(int32, optional, tag="6")]
+    pub max_pages: ::core::option::Option<i32>,
 }
 /// Deep crawler options grouped under one config node.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -18197,7 +18200,8 @@ pub struct RagCrawlerDeepCrawlerConfig {
     /// Optional. Maximum link depth from seed URLs, counted from the nearest seed. <code>0</code> means unlimited depth.
     #[prost(int32, optional, tag="3")]
     pub max_depth: ::core::option::Option<i32>,
-    /// Optional. Hard cap on pages fetched successfully in this run; <code>0</code> means unlimited.
+    /// Deprecated. Use <code>RagCrawlerConfig.max_pages</code> instead
+    #[deprecated]
     #[prost(int32, tag="4")]
     pub max_pages: i32,
     /// Optional. URL and domain restrictions.

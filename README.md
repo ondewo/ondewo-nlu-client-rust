@@ -47,7 +47,7 @@ or declare it in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ondewo-nlu-client = "~7.2"
+ondewo-nlu-client = "~7.3"
 tonic = "0.14"
 tokio = { version = "1", features = ["full"] }
 ```

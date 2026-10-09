@@ -45,9 +45,10 @@ ONDEWO_NLU_VERSION=7.3.0
 # Submodule pins - `make checkout_defined_submodule_versions` checks out exactly these.
 # Pin the API to `tags/<api version>` before cutting a release; a branch is for development only.
 ONDEWO_NLU_API_GIT_BRANCH=tags/7.3.0
-# The compiler has to be 5.15.2 or newer: an older image builds its crate without the README.md
-# that Cargo.toml's `readme` names, and its `cargo package` fails every generation run.
-ONDEWO_PROTO_COMPILER_GIT_BRANCH=tags/5.15.2
+# The compiler has to be 5.15.4 or newer: 5.15.4 pre-warms tonic tls-native-roots, which
+# src/channel.rs needs, and an image older than 5.15.2 builds its crate without the README.md
+# that Cargo.toml's `readme` names.
+ONDEWO_PROTO_COMPILER_GIT_BRANCH=tags/5.15.4
 
 # Submodule directories - these MUST match the paths in .gitmodules
 ONDEWO_NLU_API_DIR=ondewo-nlu-api

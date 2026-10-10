@@ -429,7 +429,7 @@ validate_release_credentials: login_to_gh ## Fail unless GitHub accepts GITHUB_G
 	@echo "$(GREEN)[SUCCESS]$(NC) GITHUB_GH_TOKEN may push to ondewo/ondewo-nlu-client-rust"
 
 login_to_gh: check_gh_token ## Login to Github CLI with Access Token
-	@echo $(GITHUB_GH_TOKEN) | gh auth login -p ssh --with-token
+	@echo "$$GITHUB_GH_TOKEN" | gh auth login -p ssh --with-token
 
 check_release_notes: ## Assert RELEASE.md carries an entry for ONDEWO_NLU_VERSION
 # `gh release create -n ""` succeeds and publishes an EMPTY release, so an entry that was
@@ -530,11 +530,13 @@ clone_devops_accounts: ## Clones devops-accounts repo
 
 run_release_with_devops: ## Gets Credentials from devops-repo and run release command with them
 # EXACTLY the two credentials this client uses, each read with an ANCHORED grep: the devops files
-# open with '#' comment lines that name variables, and a comment line reaching the command line
-# below would comment out every credential after it. @-prefixed, so make never echoes the expanded
-# line with the tokens in it.
-	$(eval info:= $(shell grep -hE '^GITHUB_GH_TOKEN=' ${DEVOPS_ACCOUNT_DIR}/account_github.env; grep -hE '^CARGO_REGISTRY_TOKEN=' ${DEVOPS_ACCOUNT_DIR}/account_cargo.env))
-	@make ${RELEASE_TARGET} $(info)
+# open with '#' comment lines that name variables. They are exported into the sub-make's
+# ENVIRONMENT: `make release NAME=<value>` would put every token on make's argv, which
+# /proc/<pid>/cmdline shows to every user on the host.
+	@set -a \
+		&& eval "$$(grep -h -E '^(GITHUB_GH_TOKEN)=' ${DEVOPS_ACCOUNT_DIR}/account_github.env; grep -h -E '^(CARGO_REGISTRY_TOKEN)=' ${DEVOPS_ACCOUNT_DIR}/account_cargo.env)" \
+		&& set +a \
+		&& make ${RELEASE_TARGET}
 
 spc: ## Checks that the Release Branch and Tag do not exist yet and that Cargo.toml carries ONDEWO_NLU_VERSION
 	$(eval filtered_branches:= $(shell git branch --all | grep "release/${ONDEWO_NLU_VERSION}"))

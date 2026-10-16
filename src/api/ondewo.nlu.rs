@@ -10581,6 +10581,25 @@ pub struct LlmCcaiServiceUsage {
     #[prost(string, repeated, tag="6")]
     pub model_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Per-base-URL usage rollup across the scope. One entry per distinct
+/// <code>LlmTelemetry.base_url</code>; calls whose model configuration states no base URL are
+/// grouped under an empty <code>base_url</code>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LlmBaseUrlUsage {
+    /// Base URL the calls went through (proxy / OpenAI-compatible endpoint), with embedded
+    /// credentials redacted. Empty = the model configuration states no base URL.
+    #[prost(string, tag="1")]
+    pub base_url: ::prost::alloc::string::String,
+    /// Number of LLM calls made through this base URL in scope.
+    #[prost(int64, tag="2")]
+    pub call_count: i64,
+    /// Summed token usage for the calls made through this base URL.
+    #[prost(message, optional, tag="3")]
+    pub llm_token_usage: ::core::option::Option<LlmTokenUsage>,
+    /// Distinct model names called through this base URL.
+    #[prost(string, repeated, tag="4")]
+    pub model_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 /// Per-intent-agent usage rollup across the scope.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LlmAgentUsage {
@@ -10777,6 +10796,11 @@ pub struct LlmTelemetryReport {
     /// *_LLM_SAFETY and *_LLM_TOTAL_STATISTICS reports.
     #[prost(message, optional, tag="20")]
     pub safety_stats: ::core::option::Option<LlmSafetyStats>,
+    /// Per-base-URL usage rollup. Populated for *_LLM_TOTAL_STATISTICS. Unlike
+    /// <code>LlmModelUsage.base_url</code>, which carries one base URL per model, this lists every
+    /// distinct base URL in scope.
+    #[prost(message, repeated, tag="21")]
+    pub base_urls_used: ::prost::alloc::vec::Vec<LlmBaseUrlUsage>,
 }
 /// Per-category native-safety aggregate across the LLM calls in scope.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10911,6 +10935,39 @@ pub struct LlmTokenUsageUpdateEvent {
     /// Running totals for that llm_call.
     #[prost(message, optional, tag="2")]
     pub llm_token_usage: ::core::option::Option<LlmTokenUsage>,
+}
+/// Emitted on a streaming DetectIntent when a node of an AI Team graph starts, completes or fails.
+/// A node inside a nested graph (a subgraph, or a member agent of a supervisor or swarm) is reported too,
+/// with its full <code>llm_agent_node_event_node_path</code>.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LlmAgentNodeEvent {
+    /// Id of this run of the node. The <code>LLM_AGENT_NODE_PHASE_STARTED</code> event and the
+    /// <code>LLM_AGENT_NODE_PHASE_COMPLETED</code> or <code>LLM_AGENT_NODE_PHASE_FAILED</code> event of one run share it.
+    #[prost(string, tag="1")]
+    pub llm_agent_node_event_node_run_id: ::prost::alloc::string::String,
+    /// <code>llm_agent_node_event_node_run_id</code> of the node run this one is nested in; empty for a node of the outermost graph.
+    #[prost(string, tag="2")]
+    pub llm_agent_node_event_parent_node_run_id: ::prost::alloc::string::String,
+    /// Name of the node, e.g. <code>researcher</code>.
+    #[prost(string, tag="3")]
+    pub llm_agent_node_event_node_display_name: ::prost::alloc::string::String,
+    /// Names of the nodes from the outermost graph down to this one, e.g.
+    /// <code>\["supervisor", "researcher", "model"\]</code>. The last element equals <code>llm_agent_node_event_node_display_name</code>.
+    #[prost(string, repeated, tag="4")]
+    pub llm_agent_node_event_node_path: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Lifecycle phase this event reports.
+    #[prost(enumeration="LlmAgentNodePhase", tag="5")]
+    pub llm_agent_node_phase: i32,
+    /// Wall-clock time of the event.
+    #[prost(message, optional, tag="6")]
+    pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
+    /// Duration of the node run in seconds; set only on <code>LLM_AGENT_NODE_PHASE_COMPLETED</code> and
+    /// <code>LLM_AGENT_NODE_PHASE_FAILED</code>.
+    #[prost(float, tag="7")]
+    pub llm_agent_node_event_duration_in_s: f32,
+    /// Populated only on <code>LLM_AGENT_NODE_PHASE_FAILED</code>; empty string otherwise.
+    #[prost(string, tag="8")]
+    pub llm_agent_node_event_error_message: ::prost::alloc::string::String,
 }
 /// Chunk information for a document chunk referenced in a RAG based <code>StreamingDetectIntentResponse</code>
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -11098,7 +11155,7 @@ pub struct StreamingDetectIntentResponse {
     /// Incremental telemetry events emitted during the turn. The final response chunk
     /// continues to carry the aggregated <code>LlmTelemetryReport</code> under
     /// <code>query_result.llm_telemetry_report</code>.
-    #[prost(oneof="streaming_detect_intent_response::TelemetryEvent", tags="5, 6, 7, 8, 9, 10")]
+    #[prost(oneof="streaming_detect_intent_response::TelemetryEvent", tags="5, 6, 7, 8, 9, 10, 11")]
     pub telemetry_event: ::core::option::Option<streaming_detect_intent_response::TelemetryEvent>,
 }
 /// Nested message and enum types in `StreamingDetectIntentResponse`.
@@ -11126,6 +11183,9 @@ pub mod streaming_detect_intent_response {
         /// Emitted when the running LLM token-usage totals are updated.
         #[prost(message, tag="10")]
         LlmTokenUsageUpdate(super::LlmTokenUsageUpdateEvent),
+        /// Emitted when a node of an AI Team graph starts, completes or fails.
+        #[prost(message, tag="11")]
+        LlmAgentNodeEvent(super::LlmAgentNodeEvent),
     }
 }
 /// Contains a speech recognition result corresponding to a portion of the audio that is currently being processed or an indication that this is the end of the single requested utterance.
@@ -13391,6 +13451,43 @@ impl LlmSafetyLocation {
         }
     }
 }
+/// Lifecycle phase of an AI Team graph node, reported by <code>LlmAgentNodeEvent</code>.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum LlmAgentNodePhase {
+    /// Not set.
+    Unspecified = 0,
+    /// The node started running.
+    Started = 1,
+    /// The node finished without an error.
+    Completed = 2,
+    /// The node raised an error.
+    Failed = 3,
+}
+impl LlmAgentNodePhase {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LLM_AGENT_NODE_PHASE_UNSPECIFIED",
+            Self::Started => "LLM_AGENT_NODE_PHASE_STARTED",
+            Self::Completed => "LLM_AGENT_NODE_PHASE_COMPLETED",
+            Self::Failed => "LLM_AGENT_NODE_PHASE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LLM_AGENT_NODE_PHASE_UNSPECIFIED" => Some(Self::Unspecified),
+            "LLM_AGENT_NODE_PHASE_STARTED" => Some(Self::Started),
+            "LLM_AGENT_NODE_PHASE_COMPLETED" => Some(Self::Completed),
+            "LLM_AGENT_NODE_PHASE_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
 /// Audio encoding of the audio content sent in the conversational query request.
 /// Refer to the <a href="/speech/docs/basics">Cloud Speech API documentation</a> for more details.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -14186,6 +14283,11 @@ pub struct GetAgentStatisticsRequest {
     /// Optional. Restrict LLM aggregations to specific CCAI service providers. Empty = all.
     #[prost(enumeration="CcaiServiceProvider", repeated, tag="10")]
     pub llm_ccai_service_provider_filter: ::prost::alloc::vec::Vec<i32>,
+    /// Optional. Restrict LLM-typed reports to calls made through specific base URLs (the
+    /// <code>LlmTelemetry.base_url</code> values, as reported in <code>LlmTelemetryReport.base_urls_used</code>).
+    /// An empty string selects calls whose model configuration states no base URL. Empty list = all.
+    #[prost(string, repeated, tag="11")]
+    pub llm_base_url_filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Response to get statistics of the agent
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -14257,6 +14359,11 @@ pub struct GetSessionsStatisticsRequest {
     /// Optional. Restrict LLM-typed reports to specific CCAI service providers. Empty = all.
     #[prost(enumeration="CcaiServiceProvider", repeated, tag="15")]
     pub llm_ccai_service_provider_filter: ::prost::alloc::vec::Vec<i32>,
+    /// Optional. Restrict LLM-typed reports to calls made through specific base URLs (the
+    /// <code>LlmTelemetry.base_url</code> values, as reported in <code>LlmTelemetryReport.base_urls_used</code>).
+    /// An empty string selects calls whose model configuration states no base URL. Empty list = all.
+    #[prost(string, repeated, tag="16")]
+    pub llm_base_url_filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Report of the statistics about sessions
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -14316,6 +14423,11 @@ pub struct GetSessionsStatisticsTimeSeriesRequest {
     /// returned data (e.g. paths=\["llm_telemetry_time_series_buckets.llm_telemetry_report.llm_token_usage"\]).
     #[prost(message, optional, tag="11")]
     pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+    /// Optional. Restrict LLM-typed reports to calls made through specific base URLs (the
+    /// <code>LlmTelemetry.base_url</code> values, as reported in <code>LlmTelemetryReport.base_urls_used</code>).
+    /// An empty string selects calls whose model configuration states no base URL. Empty list = all.
+    #[prost(string, repeated, tag="12")]
+    pub llm_base_url_filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// One time bucket of aggregated LLM telemetry.
 #[derive(Clone, PartialEq, ::prost::Message)]

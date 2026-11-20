@@ -1254,6 +1254,17 @@ pub struct StreamRemoteOperationContainerLogsRequest {
     /// legacy single-container behavior.
     #[prost(string, tag="4")]
     pub container_id: ::prost::alloc::string::String,
+    /// Optional. Only stream lines whose message matches this regular expression (Python <code>re</code> syntax,
+    /// at most 512 characters). Empty (the default) disables regex filtering. An invalid, oversized or
+    /// catastrophically backtracking pattern is rejected with <code>INVALID_ARGUMENT</code>.
+    #[prost(string, tag="5")]
+    pub regex: ::prost::alloc::string::String,
+    /// Optional. Resume exactly where a previous stream or <code>GetRemoteOperationContainerLogs</code> page
+    /// stopped: the <code>next_resume_token</code> of that response, echoed back verbatim. When set, no
+    /// historical replay is applied and <code>tail_lines</code> is ignored. The token is interchangeable with
+    /// <code>Logs.StreamLogs</code> / <code>Logs.ListLogs</code> tokens.
+    #[prost(string, tag="6")]
+    pub resume_token: ::prost::alloc::string::String,
 }
 /// The request message for <a href="index.html#ondewo.nlu.Operations.GetRemoteOperationContainerLogs">Operations.GetRemoteOperationContainerLogs</a>.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1296,6 +1307,17 @@ pub struct GetRemoteOperationContainerLogsRequest {
     /// <code>after_seq</code> (newer window). <code>0</code> (the default) disables forward paging.
     #[prost(int64, tag="9")]
     pub after_seq: i64,
+    /// Optional. Partial response: the field paths to populate in every returned
+    /// <code>RemoteOperationContainerLogLine</code>, relative to that message (no <code>log_lines.</code>
+    /// prefix). <code>seq</code> and <code>log_stream</code> are always populated. Unset or empty returns every
+    /// field. An unknown path is rejected with <code>INVALID_ARGUMENT</code> naming it.
+    #[prost(message, optional, tag="10")]
+    pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+    /// Optional. An opaque cursor from a previous response&apos;s <code>next_resume_token</code>. Use it instead of
+    /// <code>after_seq</code> / <code>before_seq</code> when the operation ran several containers. Cannot be
+    /// combined with <code>before_seq</code> or <code>after_seq</code>.
+    #[prost(string, tag="11")]
+    pub resume_token: ::prost::alloc::string::String,
 }
 /// The response message for <a href="index.html#ondewo.nlu.Operations.GetRemoteOperationContainerLogs">Operations.GetRemoteOperationContainerLogs</a>.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1317,6 +1339,13 @@ pub struct GetRemoteOperationContainerLogsResponse {
     /// <code>seq</code> &gt; <code>min_available_seq</code>) — the client may keep scrolling up.
     #[prost(bool, tag="5")]
     pub has_more_older: bool,
+    /// Cursor to fetch the next window, or to start a <code>StreamRemoteOperationContainerLogs</code> (or a
+    /// <code>Logs.StreamLogs</code>) that continues exactly where this window ended.
+    #[prost(string, tag="6")]
+    pub next_resume_token: ::prost::alloc::string::String,
+    /// True when entries newer than this window exist.
+    #[prost(bool, tag="7")]
+    pub has_more_newer: bool,
 }
 /// A single parsed container log line, emitted by both the streaming and the query RPCs.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1338,11 +1367,17 @@ pub struct RemoteOperationContainerLogLine {
     /// The docker container name this line was produced by. Empty when unavailable.
     #[prost(string, tag="5")]
     pub container_name: ::prost::alloc::string::String,
-    /// The monotonically-increasing sequence number of this line within its container&apos;s captured log
-    /// (assigned by the server-side capture). Used as the cursor for infinite-scroll paging. <code>0</code>
-    /// when the line was produced by a legacy path that did not assign a sequence.
+    /// Ordering cursor of this line, assigned by the database. Monotonically increasing WITHIN ONE CONTAINER but
+    /// NOT contiguous: values come from a sequence shared by every log stream and are removed by retention. Never
+    /// compute the next cursor as <code>seq + 1</code>; pass it back as <code>after_seq</code> /
+    /// <code>before_seq</code> (strictly greater / smaller) or use <code>resume_token</code>. <code>0</code> when
+    /// the line was produced by a legacy path that did not assign a sequence.
     #[prost(int64, tag="6")]
     pub seq: i64,
+    /// Resource name of the log stream this line belongs to (see
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry.log_stream</a>).
+    #[prost(string, tag="7")]
+    pub log_stream: ::prost::alloc::string::String,
 }
 /// The request message for <a href="index.html#ondewo.nlu.Operations.GetRemoteOperationContainerStatus">Operations.GetRemoteOperationContainerStatus</a>.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4844,8 +4879,11 @@ pub enum CcaiServiceProvider {
     /// Microsoft Azure as the CCAI service provider, using Microsoft&apos;s Azure cognitive services
     /// <a href="<https://azure.microsoft.com/en-us/products/cognitive-services/openai-service/">Azure> OpenAI</a>
     MicrosoftAzureOpenai = 3,
-    /// Microsoft AutoGen as the CCAI service provider
-    /// <a href="<https://github.com/microsoft/autogen">AutoGen</a>>
+    /// Deprecated: Microsoft AutoGen as the CCAI service provider
+    /// <a href="<https://github.com/microsoft/autogen">AutoGen</a>.>
+    /// The server no longer runs AutoGen and refuses to create services with this provider; stored AutoGen
+    /// services are migrated to AI Teams v2 (LangChain / LangGraph). The value is kept for wire
+    /// compatibility and may still appear on data written before the migration.
     MicrosoftAutogen = 4,
     /// Ollama as the CCAI service provider, typically associated with specific OLLAMA AI tools
     /// <a href="<https://github.com/ollama/ollama">Ollama</a>>
@@ -9997,6 +10035,13 @@ pub struct QueryParameters {
     /// transcriptions of the user input sorted by score
     #[prost(message, repeated, tag="14")]
     pub transcriptions: ::prost::alloc::vec::Vec<S2tTranscription>,
+    /// Optional. Marks the request as a preemptive draft: a turn the client (e.g. ondewo-csi) starts speculatively,
+    /// e.g. on a partial transcript, and may later discard with <code>TurnControl.discard_draft</code>. The server
+    /// records the mark on the session step of this request. A <code>DiscardDraft</code> deletes only a session step
+    /// of the same session whose request carried this mark. A server that does not know this field ignores it and
+    /// keeps the step.
+    #[prost(bool, tag="15")]
+    pub preemptive_draft: bool,
 }
 /// Represents a speech-to-text transcription.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10089,7 +10134,7 @@ pub struct LlmTokenUsage {
 /// Metadata for one tool call executed by the LLM.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LlmToolCallMetadata {
-    /// Stable id assigned by the upstream framework (autogen / langchain).
+    /// Stable id assigned by the upstream framework (e.g. langchain).
     #[prost(string, tag="1")]
     pub tool_call_id: ::prost::alloc::string::String,
     /// Name of the tool / function invoked.
@@ -10140,7 +10185,8 @@ pub struct LlmThinkingMetadata {
 /// Telemetry for a single LLM invocation inside one DetectIntent turn.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LlmTelemetry {
-    /// Provider tag: "autogen" | "langchain" | "openai" | "anthropic" | ...
+    /// Provider tag: "langchain" | "openai" | "anthropic" | ... ("autogen" only on telemetry recorded before AutoGen
+    /// was removed).
     #[prost(string, tag="1")]
     pub provider: ::prost::alloc::string::String,
     /// Concrete model identifier (e.g. "Qwen/Qwen3.6-27b-fp8").
@@ -10248,28 +10294,29 @@ pub struct LlmTelemetry {
     /// LangSmith run URL for direct click-through when LangSmith tracing is active.
     #[prost(string, tag="35")]
     pub langsmith_run_url: ::prost::alloc::string::String,
-    /// Autogen team display name owning the call.
+    /// Display name of the agent team owning the call; empty for a single agent.
     #[prost(string, tag="36")]
     pub team_name: ::prost::alloc::string::String,
-    /// Autogen team identifier (UUID).
+    /// Identifier (UUID) of the agent team owning the call.
     #[prost(string, tag="37")]
     pub team_id: ::prost::alloc::string::String,
-    /// Autogen agent role tag (user_proxy | assistant | tool_executor | reflection).
+    /// Role tag of the agent that made the call inside its team.
     #[prost(string, tag="38")]
     pub agent_role: ::prost::alloc::string::String,
-    /// Name of the autogen agent that produced the message.
+    /// Name of the agent that produced the message.
     #[prost(string, tag="39")]
     pub sender_agent: ::prost::alloc::string::String,
-    /// Name of the autogen agent that received the message.
+    /// Name of the agent that received the message.
     #[prost(string, tag="40")]
     pub recipient_agent: ::prost::alloc::string::String,
-    /// Zero-based position of this LLM call inside the autogen <code>run_stream()</code> sequence.
+    /// Zero-based position of this LLM call inside the agent run&apos;s sequence of LLM calls.
     #[prost(int32, tag="41")]
     pub turn_index: i32,
-    /// Number of reflection loops executed in <code>robust_assistant_agent</code> for this call.
+    /// Deprecated: number of reflection loops of the removed AutoGen <code>robust_assistant_agent</code> for this
+    /// call. No current agent runs reflection loops, so it is 0.
     #[prost(int32, tag="42")]
     pub reflection_iterations: i32,
-    /// Autogen <code>TaskResult.stop_reason</code> string when surfaced.
+    /// Stop reason of the agent team run when surfaced (formerly AutoGen <code>TaskResult.stop_reason</code>).
     #[prost(string, tag="43")]
     pub termination_reason: ::prost::alloc::string::String,
     /// Join key linking this LLM call to an evaluator run (see llm_evaluation.proto).
@@ -10356,7 +10403,7 @@ pub struct LlmTelemetry {
     /// <code>llm_call_id</code> (<code>LlmLlmCallStartedEvent</code>,
     /// <code>LlmToolCallStartedEvent</code>, ...), so an aggregate or a persisted row can be
     /// correlated back to the live event stream. Distinct from <code>run_id</code> (field 11),
-    /// which is the UPSTREAM framework's id (autogen / langchain).
+    /// which is the UPSTREAM framework's id (e.g. langchain).
     #[prost(string, tag="63")]
     pub llm_call_id: ::prost::alloc::string::String,
 }
@@ -10661,7 +10708,7 @@ pub struct LlmToolUsage {
     #[prost(string, tag="9")]
     pub llm_call_id: ::prost::alloc::string::String,
     /// Stable id of the representative invocation, assigned by the upstream framework
-    /// (autogen / langchain).
+    /// (e.g. langchain).
     #[prost(string, tag="10")]
     pub tool_call_id: ::prost::alloc::string::String,
 }
@@ -10840,7 +10887,8 @@ pub struct LlmCallStartedEvent {
     /// Collector-assigned id grouping all events emitted for this LLM call.
     #[prost(string, tag="1")]
     pub llm_call_id: ::prost::alloc::string::String,
-    /// Provider tag: "autogen" | "langchain" | "openai" | "anthropic" | ...
+    /// Provider tag: "langchain" | "openai" | "anthropic" | ... ("autogen" only on telemetry recorded before AutoGen
+    /// was removed).
     #[prost(string, tag="2")]
     pub provider: ::prost::alloc::string::String,
     /// Concrete model identifier (e.g. "claude-3-5-sonnet-20241022").
@@ -10872,7 +10920,7 @@ pub struct LlmCallFinishedEvent {
 /// Emitted on a streaming DetectIntent when a tool call starts.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LlmToolCallStartedEvent {
-    /// Stable id assigned by the upstream framework (autogen / langchain).
+    /// Stable id assigned by the upstream framework (e.g. langchain).
     #[prost(string, tag="1")]
     pub tool_call_id: ::prost::alloc::string::String,
     /// Name of the tool / function invoked.
@@ -10999,6 +11047,9 @@ pub struct ReferencedChunk {
     /// For crawled documents link to the source document that directly jumps to the chunk's location on the page using a text fragment anchor (a bit fragile and might not always work). For any other document it is left empty.
     #[prost(string, tag="9")]
     pub deep_link_url: ::prost::alloc::string::String,
+    /// Title of the document (optional).
+    #[prost(string, tag="10")]
+    pub document_title: ::prost::alloc::string::String,
 }
 /// Represents the result of conversational query or event processing.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -11132,6 +11183,19 @@ pub struct StreamingDetectIntentRequest {
     /// over all streaming messages must not exceed 1 minute.
     #[prost(bytes="vec", tag="6")]
     pub input_audio: ::prost::alloc::vec::Vec<u8>,
+    /// Optional. Controls a turn of this stream: cancels it, reports what the user heard of its answer, or discards
+    /// the session step of a preemptive draft. Sent ALONE (no <code>query_input</code>) on a call-length stream; the
+    /// server applies it in stream order and starts no turn for it. Send it only to a server that advertised the
+    /// initial metadata <code>x-ondewo-cai-turn-control: 1</code> on this stream: an older server treats a request
+    /// without <code>query_input</code> as a malformed turn and ends the stream.
+    #[prost(message, optional, tag="7")]
+    pub turn_control: ::core::option::Option<TurnControl>,
+    /// Optional. Client-minted id (e.g. a uuid4 hex) of the turn this request STARTS; set together with
+    /// <code>query_input</code>. The server echoes it on every response of that turn
+    /// (<code>StreamingDetectIntentResponse.client_turn_id</code>), and a <code>CancelTurn</code> or
+    /// <code>HeardReport</code> can name the turn by it before the server's <code>response_id</code> is known.
+    #[prost(string, tag="8")]
+    pub client_turn_id: ::prost::alloc::string::String,
 }
 /// The top-level message returned from the <code>StreamingDetectIntent</code> method.
 /// Multiple response messages can be returned in order:
@@ -11152,6 +11216,21 @@ pub struct StreamingDetectIntentResponse {
     /// Specifies the status of the webhook request.
     #[prost(message, optional, tag="4")]
     pub webhook_status: ::core::option::Option<super::super::google::rpc::Status>,
+    /// Set on the response that acknowledges a <code>CancelTurn</code> or a <code>DiscardDraft</code> sent as
+    /// <code>StreamingDetectIntentRequest.turn_control</code>; a <code>HeardReport</code> is not acknowledged on the
+    /// stream. A response that carries it carries no query result and is never an answer. The acknowledgement of a
+    /// <code>CancelTurn</code> is sent after every other response of the cancelled turn, so no response of that turn
+    /// follows it. The acknowledgement of a <code>DiscardDraft</code> is sent once the discard is decided, between
+    /// turns, with the draft's <code>response_id</code> and no <code>client_turn_id</code>:
+    /// <code>TURN_CONTROL_ACK_STATUS_DRAFT_DISCARDED</code> when the draft's session step was deleted,
+    /// <code>TURN_CONTROL_ACK_STATUS_UNKNOWN_TURN</code> when no step was deleted. Not part of
+    /// <code>telemetry_event</code>.
+    #[prost(message, optional, tag="12")]
+    pub turn_control_ack: ::core::option::Option<TurnControlAck>,
+    /// Echo of <code>StreamingDetectIntentRequest.client_turn_id</code> of the turn this response belongs to; empty
+    /// when the client sent none.
+    #[prost(string, tag="13")]
+    pub client_turn_id: ::prost::alloc::string::String,
     /// Incremental telemetry events emitted during the turn. The final response chunk
     /// continues to carry the aggregated <code>LlmTelemetryReport</code> under
     /// <code>query_result.llm_telemetry_report</code>.
@@ -11187,6 +11266,304 @@ pub mod streaming_detect_intent_response {
         #[prost(message, tag="11")]
         LlmAgentNodeEvent(super::LlmAgentNodeEvent),
     }
+}
+/// Controls one turn of a session. Sent as <code>StreamingDetectIntentRequest.turn_control</code> on a call-length
+/// stream, or in an <code>InterruptTurnRequest</code>.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TurnControl {
+    /// The control to apply.
+    #[prost(oneof="turn_control::TurnControl", tags="1, 2, 3")]
+    pub turn_control: ::core::option::Option<turn_control::TurnControl>,
+}
+/// Nested message and enum types in `TurnControl`.
+pub mod turn_control {
+    /// The control to apply.
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum TurnControl {
+        /// Cancel the turn: stop generating its answer. Acknowledged with a <code>TurnControlAck</code>.
+        #[prost(message, tag="1")]
+        CancelTurn(super::CancelTurn),
+        /// Report what the user heard of the turn's answer, so the server rewrites the session step and the LLM
+        /// memory to it.
+        #[prost(message, tag="2")]
+        HeardReport(super::HeardReport),
+        /// Discard the session step of a preemptive draft the client did not use. Acknowledged with a
+        /// <code>TurnControlAck</code>.
+        #[prost(message, tag="3")]
+        DiscardDraft(super::DiscardDraft),
+    }
+}
+/// Cancels a turn. At least one of <code>response_id</code> and <code>client_turn_id</code> must be set; when both
+/// are, <code>client_turn_id</code> is authoritative.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CancelTurn {
+    /// The server's <code>response_id</code> of the turn, when the client has already received it; empty otherwise.
+    #[prost(string, tag="1")]
+    pub response_id: ::prost::alloc::string::String,
+    /// <code>StreamingDetectIntentRequest.client_turn_id</code> of the turn.
+    #[prost(string, tag="2")]
+    pub client_turn_id: ::prost::alloc::string::String,
+    /// Why the turn is cancelled.
+    #[prost(enumeration="TurnInterruptionReason", tag="3")]
+    pub turn_interruption_reason: i32,
+    /// Wall-clock time at which the client decided to cancel. Telemetry only.
+    #[prost(message, optional, tag="4")]
+    pub decided_at: ::core::option::Option<::prost_types::Timestamp>,
+    /// What happens to background work the turn started.
+    #[prost(enumeration="BackgroundWorkPolicy", tag="5")]
+    pub background_work_policy: i32,
+}
+/// What the user heard of one spoken message of a turn.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HeardMessage {
+    /// Index into the turn's <code>QueryResult.fulfillment_messages</code>; <code>-1</code> for a filler, which is
+    /// not one of them.
+    #[prost(int32, tag="1")]
+    pub fulfillment_message_index: i32,
+    /// Platform of that fulfillment message.
+    #[prost(enumeration="intent::message::Platform", tag="2")]
+    pub platform: i32,
+    /// The text that was synthesized for the message, SIP and SSML markup stripped.
+    #[prost(string, tag="3")]
+    pub full_text: ::prost::alloc::string::String,
+    /// The prefix of <code>full_text</code> the user heard, cut back to a word boundary.
+    #[prost(string, tag="4")]
+    pub heard_text: ::prost::alloc::string::String,
+    /// Length of <code>heard_text</code> in Unicode code points.
+    #[prost(int32, tag="5")]
+    pub heard_char_count: i32,
+    /// Duration of the message's audio that was played to the user, in seconds.
+    #[prost(float, tag="6")]
+    pub heard_audio_duration_in_s: f32,
+    /// Duration of the message's whole audio, in seconds; 0 when it was never synthesized.
+    #[prost(float, tag="7")]
+    pub total_audio_duration_in_s: f32,
+    /// The message was played to its end.
+    #[prost(bool, tag="8")]
+    pub completed: bool,
+    /// Nothing of the message was played (e.g. it was still queued when the turn was interrupted).
+    #[prost(bool, tag="9")]
+    pub never_started: bool,
+    /// The message carried a SIP trigger (e.g. a transfer or a hangup) that was NOT executed because the turn was
+    /// interrupted first.
+    #[prost(bool, tag="10")]
+    pub skipped_sip_trigger: bool,
+    /// For a filler, the filler id the server sent in <code>diagnostic_info.ondewo_filler.filler_id</code>; empty
+    /// otherwise.
+    #[prost(string, tag="11")]
+    pub filler_id: ::prost::alloc::string::String,
+}
+/// Reports what the user heard of a turn's answer. At least one of <code>response_id</code> and
+/// <code>client_turn_id</code> must be set. The server keeps the report with the highest <code>revision</code> per
+/// turn and ignores a lower or equal one.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HeardReport {
+    /// The server's <code>response_id</code> of the turn, when the client has already received it; empty otherwise.
+    #[prost(string, tag="1")]
+    pub response_id: ::prost::alloc::string::String,
+    /// <code>StreamingDetectIntentRequest.client_turn_id</code> of the turn.
+    #[prost(string, tag="2")]
+    pub client_turn_id: ::prost::alloc::string::String,
+    /// Revision of this report, starting at 1. A later, more precise measurement of the same turn carries a higher
+    /// revision.
+    #[prost(int32, tag="3")]
+    pub revision: i32,
+    /// Why the turn was interrupted.
+    #[prost(enumeration="TurnInterruptionReason", tag="4")]
+    pub turn_interruption_reason: i32,
+    /// One entry per message of the turn that was spoken, queued or skipped, in playback order.
+    #[prost(message, repeated, tag="5")]
+    pub heard_messages: ::prost::alloc::vec::Vec<HeardMessage>,
+    /// How the heard text was determined.
+    #[prost(enumeration="HeardTextPrecision", tag="6")]
+    pub heard_text_precision: i32,
+    /// Duration of heard audio that was played after the user had started speaking (the overlap of bot and user),
+    /// in seconds.
+    #[prost(float, tag="7")]
+    pub caller_overlap_duration_in_s: f32,
+}
+/// Discards the session step of a preemptive draft: a turn the client started speculatively on a partial
+/// transcript and then did not use. The server deletes the session step only when it belongs to this session and its
+/// request carried <code>QueryParameters.preemptive_draft</code> = true; it answers
+/// <code>TURN_CONTROL_ACK_STATUS_DRAFT_DISCARDED</code>. Any other step is kept and the server answers
+/// <code>TURN_CONTROL_ACK_STATUS_UNKNOWN_TURN</code>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DiscardDraft {
+    /// The server's <code>response_id</code> of the draft turn.
+    #[prost(string, tag="1")]
+    pub response_id: ::prost::alloc::string::String,
+}
+/// Acknowledges a turn control.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TurnControlAck {
+    /// The server's <code>response_id</code> of the turn; empty when it is not known (e.g. a turn cancelled before
+    /// it started).
+    #[prost(string, tag="1")]
+    pub response_id: ::prost::alloc::string::String,
+    /// <code>client_turn_id</code> of the turn, as sent by the client.
+    #[prost(string, tag="2")]
+    pub client_turn_id: ::prost::alloc::string::String,
+    /// Outcome of the turn control.
+    #[prost(enumeration="TurnControlAckStatus", tag="3")]
+    pub turn_control_ack_status: i32,
+    /// Time the server took from receiving a <code>CancelTurn</code> until the turn's generation had stopped, in
+    /// seconds; 0 for any other control.
+    #[prost(float, tag="4")]
+    pub server_cancel_duration_in_s: f32,
+}
+/// The request to interrupt a turn of a session outside a <code>StreamingDetectIntent</code> stream.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InterruptTurnRequest {
+    /// Required. The session of the turn. Format:
+    /// <code>projects/&lt;project_uuid&gt;/agent/sessions/&lt;session_uuid&gt;</code>.
+    #[prost(string, tag="1")]
+    pub session: ::prost::alloc::string::String,
+    /// Required. The control to apply.
+    #[prost(message, optional, tag="2")]
+    pub turn_control: ::core::option::Option<TurnControl>,
+}
+/// The response to an <code>InterruptTurnRequest</code>.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InterruptTurnResponse {
+    /// Outcome of the control.
+    #[prost(message, optional, tag="1")]
+    pub turn_control_ack: ::core::option::Option<TurnControlAck>,
+}
+/// The configuration of one warm transfer intro, as resolved by the caller of
+/// <code>PrepareWarmTransferIntro</code>. A text left empty (or unset, for an <code>optional</code> field) falls back
+/// to the agent's default text for the language (<code>Agent.warm_transfer_settings</code>), then to the built-in
+/// default. Texts are spoken to the target, never to the caller, except <code>caller_declined_message</code> and
+/// <code>caller_unreachable_message</code>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WarmTransferIntroConfig {
+    /// The LLM instruction (<code>WARM_TRANSFER_INTRO_TEXT_SOURCE_LLM_SUMMARY</code>) or the template text
+    /// (<code>WARM_TRANSFER_INTRO_TEXT_SOURCE_TEMPLATE</code>, placeholders <code>{caller_name}</code>,
+    /// <code>{callee_name}</code>, <code>{topic}</code>, <code>{summary}</code>) of the intro. At most 4000 characters.
+    #[prost(string, tag="1")]
+    pub intro_prompt: ::prost::alloc::string::String,
+    /// Where the intro text comes from.
+    #[prost(enumeration="WarmTransferIntroTextSource", tag="2")]
+    pub text_source: i32,
+    /// The first question to the target, which must not reveal anything about the caller, e.g. "Hier ist der
+    /// digitale Assistent von {project}. Ich habe einen Anruf für Sie. Sind Sie am Apparat? Sagen Sie ja oder
+    /// drücken Sie 1." Placeholder <code>{project}</code>: <code>project_display_name</code>.
+    #[prost(string, tag="3")]
+    pub ready_question: ::prost::alloc::string::String,
+    /// Whether the intro is spoken only after the target answered <code>ready_question</code> (a guard against a
+    /// mailbox). Unset = true.
+    #[prost(bool, optional, tag="4")]
+    pub confirm_human_before_intro: ::core::option::Option<bool>,
+    /// The question after the intro, e.g. "Möchten Sie das Gespräch übernehmen? Ja oder 1, nein oder 2."
+    #[prost(string, tag="5")]
+    pub accept_question: ::prost::alloc::string::String,
+    /// The question after a decline, e.g. "Was darf ich dem Anrufer ausrichten?". Unset = the agent's or the
+    /// built-in default; set to "" = the reason is not asked for.
+    #[prost(string, optional, tag="6")]
+    pub decline_reason_question: ::core::option::Option<::prost::alloc::string::String>,
+    /// The template of the message the caller hears after a decline. Placeholders <code>{callee_name}</code> and
+    /// <code>{reason}</code>; without a reason, the variant without the reason clause is used.
+    #[prost(string, tag="7")]
+    pub caller_declined_message: ::prost::alloc::string::String,
+    /// The template of the message the caller hears when the target was busy, did not answer, gave no decision or
+    /// the intro could not run. Placeholder <code>{callee_name}</code>.
+    #[prost(string, tag="8")]
+    pub caller_unreachable_message: ::prost::alloc::string::String,
+    /// The DTMF key that accepts: one of <code>0-9</code>, <code>*</code>, <code>#</code>. Empty = "1".
+    #[prost(string, tag="9")]
+    pub accept_dtmf: ::prost::alloc::string::String,
+    /// The DTMF key that declines: one of <code>0-9</code>, <code>*</code>, <code>#</code>, different from
+    /// <code>accept_dtmf</code>. Empty = "2".
+    #[prost(string, tag="10")]
+    pub decline_dtmf: ::prost::alloc::string::String,
+    /// Who the target is, e.g. "Frau Berger, Buchhaltung": <code>{callee_name}</code>. At most 128 characters.
+    #[prost(string, tag="11")]
+    pub callee_display_name: ::prost::alloc::string::String,
+    /// The role and context of the target, given to the LLM intro. At most 512 characters.
+    #[prost(string, tag="12")]
+    pub callee_description: ::prost::alloc::string::String,
+    /// The <code>ONDEWO_NLU_LLM</code> CCAI service of the LLM intro. Empty = the agent's
+    /// <code>warm_transfer_settings.llm_ccai_service_name</code>, then the project's first
+    /// <code>ONDEWO_NLU_LLM</code> service.
+    #[prost(string, tag="13")]
+    pub llm_ccai_service_name: ::prost::alloc::string::String,
+    /// How many of the latest steps of the source session the intro reads. 0 = 30.
+    #[prost(int32, tag="14")]
+    pub max_history_steps: i32,
+    /// Seconds from a question to the decision, declared to the client as the expected input's timeout.
+    #[prost(int32, tag="15")]
+    pub decision_timeout_s: i32,
+    /// The project's display name: <code>{project}</code> in <code>ready_question</code>.
+    #[prost(string, tag="16")]
+    pub project_display_name: ::prost::alloc::string::String,
+}
+/// The request to prepare the intro session of a warm transfer.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PrepareWarmTransferIntroRequest {
+    /// Required. The intro session, which must not exist yet. Format:
+    /// <code>projects/&lt;project_uuid&gt;/agent/sessions/&lt;session_uuid&gt;</code>. An existing session that
+    /// was not prepared with the same <code>transfer_request_id</code> is refused with
+    /// <code>ALREADY_EXISTS</code>.
+    #[prost(string, tag="1")]
+    pub intro_session: ::prost::alloc::string::String,
+    /// Required. The caller's session the intro summarises. Format:
+    /// <code>projects/&lt;project_uuid&gt;/agent/sessions/&lt;session_uuid&gt;</code>. A session of another project
+    /// than <code>intro_session</code> is refused with <code>INVALID_ARGUMENT</code>.
+    #[prost(string, tag="2")]
+    pub source_session: ::prost::alloc::string::String,
+    /// The configuration of the intro.
+    #[prost(message, optional, tag="3")]
+    pub config: ::core::option::Option<WarmTransferIntroConfig>,
+    /// The language of the intro session.
+    #[prost(string, tag="4")]
+    pub language_code: ::prost::alloc::string::String,
+    /// Required. The idempotency key of the transfer.
+    #[prost(string, tag="5")]
+    pub transfer_request_id: ::prost::alloc::string::String,
+}
+/// The response to a <code>PrepareWarmTransferIntroRequest</code>. Never carries the intro text.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PrepareWarmTransferIntroResponse {
+    /// The source the intro text was rendered from.
+    #[prost(enumeration="WarmTransferIntroTextSource", tag="1")]
+    pub text_source_used: i32,
+    /// True when the LLM failed or exceeded its budget and the TEMPLATE was used instead.
+    #[prost(bool, tag="2")]
+    pub text_fell_back: bool,
+    /// The length of the intro text in characters.
+    #[prost(int32, tag="3")]
+    pub intro_text_chars: i32,
+    /// The SHA-256 (hex) of the resolved prompt, for audit.
+    #[prost(string, tag="4")]
+    pub prompt_digest: ::prost::alloc::string::String,
+}
+/// The request for the outcome of a warm transfer intro.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetWarmTransferIntroOutcomeRequest {
+    /// Required. The intro session. Format:
+    /// <code>projects/&lt;project_uuid&gt;/agent/sessions/&lt;session_uuid&gt;</code>. A session that was not
+    /// prepared by <code>PrepareWarmTransferIntro</code> is answered with <code>NOT_FOUND</code>.
+    #[prost(string, tag="1")]
+    pub intro_session: ::prost::alloc::string::String,
+}
+/// The outcome of a warm transfer intro. Holds no intro text and no reason text.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WarmTransferIntroOutcome {
+    /// The decision of the target.
+    #[prost(enumeration="WarmTransferIntroDecision", tag="1")]
+    pub decision: i32,
+    /// How the decision was given.
+    #[prost(enumeration="WarmTransferIntroDecidedBy", tag="2")]
+    pub decided_by: i32,
+    /// True when the target gave a reason after declining.
+    #[prost(bool, tag="3")]
+    pub decline_reason_present: bool,
+    /// The stage of the intro session.
+    #[prost(enumeration="WarmTransferIntroStage", tag="4")]
+    pub stage: i32,
+    /// A bounded token naming why there is no decision, e.g. <code>voicemail-suspected</code> (no ready answer) or
+    /// <code>unclear-twice</code>; empty otherwise.
+    #[prost(string, tag="5")]
+    pub cause: ::prost::alloc::string::String,
 }
 /// Contains a speech recognition result corresponding to a portion of the audio that is currently being processed or an indication that this is the end of the single requested utterance.
 ///
@@ -13488,6 +13865,344 @@ impl LlmAgentNodePhase {
         }
     }
 }
+/// Why a turn was interrupted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurnInterruptionReason {
+    /// Not set.
+    Unspecified = 0,
+    /// The user spoke over the answer and the interruption was confirmed as real.
+    BargeIn = 1,
+    /// The user spoke again while the turn was still being generated, before any of its answer was played.
+    CallerSpokeWhileThinking = 2,
+    /// The call ended while the turn was being generated or played.
+    CallEnded = 3,
+    /// A filler of the turn was cut.
+    FillerCut = 4,
+    /// The user started speaking but no final transcript arrived in time, and the held answer was discarded.
+    NoFinalTimeout = 5,
+    /// A human operator took the call over.
+    OperatorTakeover = 6,
+    /// A human operator muted the bot.
+    BotMuted = 7,
+}
+impl TurnInterruptionReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TURN_INTERRUPTION_REASON_UNSPECIFIED",
+            Self::BargeIn => "TURN_INTERRUPTION_REASON_BARGE_IN",
+            Self::CallerSpokeWhileThinking => "TURN_INTERRUPTION_REASON_CALLER_SPOKE_WHILE_THINKING",
+            Self::CallEnded => "TURN_INTERRUPTION_REASON_CALL_ENDED",
+            Self::FillerCut => "TURN_INTERRUPTION_REASON_FILLER_CUT",
+            Self::NoFinalTimeout => "TURN_INTERRUPTION_REASON_NO_FINAL_TIMEOUT",
+            Self::OperatorTakeover => "TURN_INTERRUPTION_REASON_OPERATOR_TAKEOVER",
+            Self::BotMuted => "TURN_INTERRUPTION_REASON_BOT_MUTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TURN_INTERRUPTION_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "TURN_INTERRUPTION_REASON_BARGE_IN" => Some(Self::BargeIn),
+            "TURN_INTERRUPTION_REASON_CALLER_SPOKE_WHILE_THINKING" => Some(Self::CallerSpokeWhileThinking),
+            "TURN_INTERRUPTION_REASON_CALL_ENDED" => Some(Self::CallEnded),
+            "TURN_INTERRUPTION_REASON_FILLER_CUT" => Some(Self::FillerCut),
+            "TURN_INTERRUPTION_REASON_NO_FINAL_TIMEOUT" => Some(Self::NoFinalTimeout),
+            "TURN_INTERRUPTION_REASON_OPERATOR_TAKEOVER" => Some(Self::OperatorTakeover),
+            "TURN_INTERRUPTION_REASON_BOT_MUTED" => Some(Self::BotMuted),
+            _ => None,
+        }
+    }
+}
+/// What happens to background work (e.g. an asynchronous tool) the cancelled turn started.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BackgroundWorkPolicy {
+    /// Keep it running; its result is delivered later as usual.
+    Keep = 0,
+    /// Cancel work that is still pending, unless the user already heard it acknowledged.
+    CancelPending = 1,
+}
+impl BackgroundWorkPolicy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Keep => "BACKGROUND_WORK_POLICY_KEEP",
+            Self::CancelPending => "BACKGROUND_WORK_POLICY_CANCEL_PENDING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "BACKGROUND_WORK_POLICY_KEEP" => Some(Self::Keep),
+            "BACKGROUND_WORK_POLICY_CANCEL_PENDING" => Some(Self::CancelPending),
+            _ => None,
+        }
+    }
+}
+/// How the heard text of a <code>HeardReport</code> was determined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HeardTextPrecision {
+    /// Not set.
+    Unspecified = 0,
+    /// Nothing of the answer was heard.
+    NoneHeard = 1,
+    /// The whole answer was heard.
+    Full = 2,
+    /// The played share of the audio was estimated by the client from when it handed the audio to the player, not
+    /// measured by the player, and mapped proportionally onto the text.
+    EstimatedServer = 3,
+    /// The played share of the audio was measured by the audio player and mapped proportionally onto the text.
+    Proportional = 4,
+}
+impl HeardTextPrecision {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "HEARD_TEXT_PRECISION_UNSPECIFIED",
+            Self::NoneHeard => "HEARD_TEXT_PRECISION_NONE_HEARD",
+            Self::Full => "HEARD_TEXT_PRECISION_FULL",
+            Self::EstimatedServer => "HEARD_TEXT_PRECISION_ESTIMATED_SERVER",
+            Self::Proportional => "HEARD_TEXT_PRECISION_PROPORTIONAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "HEARD_TEXT_PRECISION_UNSPECIFIED" => Some(Self::Unspecified),
+            "HEARD_TEXT_PRECISION_NONE_HEARD" => Some(Self::NoneHeard),
+            "HEARD_TEXT_PRECISION_FULL" => Some(Self::Full),
+            "HEARD_TEXT_PRECISION_ESTIMATED_SERVER" => Some(Self::EstimatedServer),
+            "HEARD_TEXT_PRECISION_PROPORTIONAL" => Some(Self::Proportional),
+            _ => None,
+        }
+    }
+}
+/// Outcome of a turn control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurnControlAckStatus {
+    /// Not set.
+    Unspecified = 0,
+    /// The turn was being generated and is now cancelled.
+    Cancelled = 1,
+    /// The turn had not started yet; it is cancelled and will not run.
+    CancelledQueued = 2,
+    /// The turn had already finished generating; nothing was cancelled.
+    AlreadyFinished = 3,
+    /// No turn of this session matches the given ids. For a <code>DiscardDraft</code>: no session step of this
+    /// session with the given <code>response_id</code> carries <code>QueryParameters.preemptive_draft</code>; the
+    /// discard is refused and the step, if one exists, is kept.
+    UnknownTurn = 4,
+    /// The heard report was applied to the turn's session step.
+    HeardApplied = 5,
+    /// The heard report was ignored because a report with the same or a higher revision was already applied.
+    HeardStale = 6,
+    /// The draft's session step, whose request carried <code>QueryParameters.preemptive_draft</code>, was deleted.
+    DraftDiscarded = 7,
+}
+impl TurnControlAckStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TURN_CONTROL_ACK_STATUS_UNSPECIFIED",
+            Self::Cancelled => "TURN_CONTROL_ACK_STATUS_CANCELLED",
+            Self::CancelledQueued => "TURN_CONTROL_ACK_STATUS_CANCELLED_QUEUED",
+            Self::AlreadyFinished => "TURN_CONTROL_ACK_STATUS_ALREADY_FINISHED",
+            Self::UnknownTurn => "TURN_CONTROL_ACK_STATUS_UNKNOWN_TURN",
+            Self::HeardApplied => "TURN_CONTROL_ACK_STATUS_HEARD_APPLIED",
+            Self::HeardStale => "TURN_CONTROL_ACK_STATUS_HEARD_STALE",
+            Self::DraftDiscarded => "TURN_CONTROL_ACK_STATUS_DRAFT_DISCARDED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TURN_CONTROL_ACK_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "TURN_CONTROL_ACK_STATUS_CANCELLED" => Some(Self::Cancelled),
+            "TURN_CONTROL_ACK_STATUS_CANCELLED_QUEUED" => Some(Self::CancelledQueued),
+            "TURN_CONTROL_ACK_STATUS_ALREADY_FINISHED" => Some(Self::AlreadyFinished),
+            "TURN_CONTROL_ACK_STATUS_UNKNOWN_TURN" => Some(Self::UnknownTurn),
+            "TURN_CONTROL_ACK_STATUS_HEARD_APPLIED" => Some(Self::HeardApplied),
+            "TURN_CONTROL_ACK_STATUS_HEARD_STALE" => Some(Self::HeardStale),
+            "TURN_CONTROL_ACK_STATUS_DRAFT_DISCARDED" => Some(Self::DraftDiscarded),
+            _ => None,
+        }
+    }
+}
+/// Where the intro text of a warm transfer comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WarmTransferIntroTextSource {
+    /// Not set: <code>WARM_TRANSFER_INTRO_TEXT_SOURCE_LLM_SUMMARY</code> when the project has an LLM service, else
+    /// <code>WARM_TRANSFER_INTRO_TEXT_SOURCE_TEMPLATE</code>.
+    Unspecified = 0,
+    /// <code>WarmTransferIntroConfig.intro_prompt</code> is a text with the placeholders <code>{caller_name}</code>,
+    /// <code>{callee_name}</code>, <code>{topic}</code> and <code>{summary}</code>.
+    Template = 1,
+    /// An LLM summarises the source session for the target; <code>WarmTransferIntroConfig.intro_prompt</code> is its
+    /// instruction.
+    LlmSummary = 2,
+}
+impl WarmTransferIntroTextSource {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WARM_TRANSFER_INTRO_TEXT_SOURCE_UNSPECIFIED",
+            Self::Template => "WARM_TRANSFER_INTRO_TEXT_SOURCE_TEMPLATE",
+            Self::LlmSummary => "WARM_TRANSFER_INTRO_TEXT_SOURCE_LLM_SUMMARY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WARM_TRANSFER_INTRO_TEXT_SOURCE_UNSPECIFIED" => Some(Self::Unspecified),
+            "WARM_TRANSFER_INTRO_TEXT_SOURCE_TEMPLATE" => Some(Self::Template),
+            "WARM_TRANSFER_INTRO_TEXT_SOURCE_LLM_SUMMARY" => Some(Self::LlmSummary),
+            _ => None,
+        }
+    }
+}
+/// The decision of the target of a warm transfer intro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WarmTransferIntroDecision {
+    /// Not set.
+    Unspecified = 0,
+    /// The intro is still running.
+    Pending = 1,
+    /// The target accepted the call.
+    Accepted = 2,
+    /// The target declined the call.
+    Declined = 3,
+    /// The target gave no decision: no ready answer, an unclear answer twice, or a timeout.
+    NoDecision = 4,
+}
+impl WarmTransferIntroDecision {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WARM_TRANSFER_INTRO_DECISION_UNSPECIFIED",
+            Self::Pending => "WARM_TRANSFER_INTRO_DECISION_PENDING",
+            Self::Accepted => "WARM_TRANSFER_INTRO_DECISION_ACCEPTED",
+            Self::Declined => "WARM_TRANSFER_INTRO_DECISION_DECLINED",
+            Self::NoDecision => "WARM_TRANSFER_INTRO_DECISION_NO_DECISION",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WARM_TRANSFER_INTRO_DECISION_UNSPECIFIED" => Some(Self::Unspecified),
+            "WARM_TRANSFER_INTRO_DECISION_PENDING" => Some(Self::Pending),
+            "WARM_TRANSFER_INTRO_DECISION_ACCEPTED" => Some(Self::Accepted),
+            "WARM_TRANSFER_INTRO_DECISION_DECLINED" => Some(Self::Declined),
+            "WARM_TRANSFER_INTRO_DECISION_NO_DECISION" => Some(Self::NoDecision),
+            _ => None,
+        }
+    }
+}
+/// How the target of a warm transfer intro gave the decision.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WarmTransferIntroDecidedBy {
+    /// Not set, or not decided yet.
+    Unspecified = 0,
+    /// By a DTMF key.
+    Dtmf = 1,
+    /// By speech.
+    Speech = 2,
+    /// By the decision timeout.
+    Timeout = 3,
+}
+impl WarmTransferIntroDecidedBy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WARM_TRANSFER_INTRO_DECIDED_BY_UNSPECIFIED",
+            Self::Dtmf => "WARM_TRANSFER_INTRO_DECIDED_BY_DTMF",
+            Self::Speech => "WARM_TRANSFER_INTRO_DECIDED_BY_SPEECH",
+            Self::Timeout => "WARM_TRANSFER_INTRO_DECIDED_BY_TIMEOUT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WARM_TRANSFER_INTRO_DECIDED_BY_UNSPECIFIED" => Some(Self::Unspecified),
+            "WARM_TRANSFER_INTRO_DECIDED_BY_DTMF" => Some(Self::Dtmf),
+            "WARM_TRANSFER_INTRO_DECIDED_BY_SPEECH" => Some(Self::Speech),
+            "WARM_TRANSFER_INTRO_DECIDED_BY_TIMEOUT" => Some(Self::Timeout),
+            _ => None,
+        }
+    }
+}
+/// The stage of a warm transfer intro session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WarmTransferIntroStage {
+    /// Not set.
+    Unspecified = 0,
+    /// Prepared; nothing spoken yet.
+    Prepared = 1,
+    /// <code>ready_question</code> spoken, waiting for a person to answer.
+    ReadyAsked = 2,
+    /// The intro and <code>accept_question</code> spoken, waiting for the decision.
+    IntroSpoken = 3,
+    /// <code>decline_reason_question</code> spoken, waiting for the reason.
+    ReasonAsked = 4,
+    /// The final answer, which ends the target's call, was generated.
+    Closed = 5,
+}
+impl WarmTransferIntroStage {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WARM_TRANSFER_INTRO_STAGE_UNSPECIFIED",
+            Self::Prepared => "WARM_TRANSFER_INTRO_STAGE_PREPARED",
+            Self::ReadyAsked => "WARM_TRANSFER_INTRO_STAGE_READY_ASKED",
+            Self::IntroSpoken => "WARM_TRANSFER_INTRO_STAGE_INTRO_SPOKEN",
+            Self::ReasonAsked => "WARM_TRANSFER_INTRO_STAGE_REASON_ASKED",
+            Self::Closed => "WARM_TRANSFER_INTRO_STAGE_CLOSED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WARM_TRANSFER_INTRO_STAGE_UNSPECIFIED" => Some(Self::Unspecified),
+            "WARM_TRANSFER_INTRO_STAGE_PREPARED" => Some(Self::Prepared),
+            "WARM_TRANSFER_INTRO_STAGE_READY_ASKED" => Some(Self::ReadyAsked),
+            "WARM_TRANSFER_INTRO_STAGE_INTRO_SPOKEN" => Some(Self::IntroSpoken),
+            "WARM_TRANSFER_INTRO_STAGE_REASON_ASKED" => Some(Self::ReasonAsked),
+            "WARM_TRANSFER_INTRO_STAGE_CLOSED" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
 /// Audio encoding of the audio content sent in the conversational query request.
 /// Refer to the <a href="/speech/docs/basics">Cloud Speech API documentation</a> for more details.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -13891,6 +14606,64 @@ pub struct Agent {
     /// User id in form of a valid UUID.
     #[prost(string, tag="14")]
     pub modified_by: ::prost::alloc::string::String,
+    /// Optional. The agent's settings of warm transfer intros (<code>Sessions.PrepareWarmTransferIntro</code>).
+    /// Unset = intros are enabled while the server's warm transfer feature is switched on, with the built-in texts.
+    #[prost(message, optional, tag="15")]
+    pub warm_transfer_settings: ::core::option::Option<WarmTransferAgentSettings>,
+}
+/// The agent's settings of warm transfer intros. A text a <code>WarmTransferIntroConfig</code> leaves empty falls back
+/// to the agent's text for the intro's language, then to the built-in default.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WarmTransferAgentSettings {
+    /// Whether warm transfer intros are enabled for the agent. Unset = enabled while the server's warm transfer
+    /// feature is switched on. False = <code>PrepareWarmTransferIntro</code> answers <code>FAILED_PRECONDITION</code>
+    /// with <code>reason=warm-intro-disabled-for-agent</code>.
+    #[prost(bool, optional, tag="1")]
+    pub enabled: ::core::option::Option<bool>,
+    /// The <code>ONDEWO_NLU_LLM</code> CCAI service of the LLM intro when the request names none. Empty = the
+    /// project's first <code>ONDEWO_NLU_LLM</code> service.
+    #[prost(string, tag="2")]
+    pub llm_ccai_service_name: ::prost::alloc::string::String,
+    /// The default texts, keyed by language code (e.g. <code>de</code>).
+    #[prost(map="string, message", tag="3")]
+    pub default_texts: ::std::collections::HashMap<::prost::alloc::string::String, WarmTransferAgentTexts>,
+    /// Additional words and phrases of the decision lexicon, keyed by language code (e.g. <code>de</code>).
+    #[prost(map="string, message", tag="4")]
+    pub extra_lexicon: ::std::collections::HashMap<::prost::alloc::string::String, WarmTransferAgentLexicon>,
+}
+/// The default texts of warm transfer intros in one language. An empty text = the built-in default. The fields and
+/// placeholders are those of the same-named fields of <code>WarmTransferIntroConfig</code>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WarmTransferAgentTexts {
+    /// The first question to the target (placeholder <code>{project}</code>).
+    #[prost(string, tag="1")]
+    pub ready_question: ::prost::alloc::string::String,
+    /// The question after the intro.
+    #[prost(string, tag="2")]
+    pub accept_question: ::prost::alloc::string::String,
+    /// The question after a decline. Unset = the built-in default; set to "" = the reason is not asked for.
+    #[prost(string, optional, tag="3")]
+    pub decline_reason_question: ::core::option::Option<::prost::alloc::string::String>,
+    /// The message the caller hears after a decline (placeholders <code>{callee_name}</code>,
+    /// <code>{reason}</code>).
+    #[prost(string, tag="4")]
+    pub caller_declined_message: ::prost::alloc::string::String,
+    /// The message the caller hears when the target could not be reached or gave no decision (placeholder
+    /// <code>{callee_name}</code>).
+    #[prost(string, tag="5")]
+    pub caller_unreachable_message: ::prost::alloc::string::String,
+}
+/// Additional entries of the closed decision lexicon of warm transfer intros in one language, matched before an LLM
+/// classifies an answer. At most 50 entries in <code>accept_phrases</code> and <code>decline_phrases</code>
+/// together.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WarmTransferAgentLexicon {
+    /// Words and phrases that accept the call (and confirm the ready question), e.g. "übernehme".
+    #[prost(string, repeated, tag="1")]
+    pub accept_phrases: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Words and phrases that decline the call, e.g. "bin im Termin".
+    #[prost(string, repeated, tag="2")]
+    pub decline_phrases: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// This message contains the agent with owner
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -17007,6 +17780,828 @@ impl IntentAlgorithms {
             "OndewoWeightedEnsemble" => Some(Self::OndewoWeightedEnsemble),
             "OndewoIntentExitDetector" => Some(Self::OndewoIntentExitDetector),
             "OndewoIntentParameterMatch" => Some(Self::OndewoIntentParameterMatch),
+            _ => None,
+        }
+    }
+}
+// endregion Enums
+
+// ////////////////////////////////////////////////////////////////////////////
+// region Messages
+// ////////////////////////////////////////////////////////////////////////////
+
+/// A single captured log record. One record may span several physical lines: a Python traceback, a protobuf
+/// <code>str()</code> dump and a multi-line banner are all one record and are stored and returned as one entry.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CaiLogEntry {
+    /// Ordering cursor. Assigned by the database, monotonically increasing WITHIN ONE LOG STREAM. It is NOT
+    /// contiguous: values are drawn from a sequence shared by every stream, are consumed by rolled-back writes,
+    /// and are removed by retention. Never compute the next cursor as <code>seq + 1</code>; use
+    /// <code>resume_token</code>, or <code>before_seq</code> / <code>after_seq</code> when the filter resolves to
+    /// exactly one log stream.
+    #[prost(int64, tag="1")]
+    pub seq: i64,
+    /// When the record was produced, in UTC: the instant the server process logged it, or the instant the docker
+    /// daemon observed the first physical line of a container record.
+    #[prost(message, optional, tag="2")]
+    pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
+    /// False when <code>timestamp</code> is the instant CAI captured the record rather than the instant it was
+    /// produced, which happens when a container line carried no parsable docker timestamp.
+    #[prost(bool, tag="3")]
+    pub timestamp_is_exact: bool,
+    /// The severity of the record. <code>LOG_SEVERITY_UNSPECIFIED</code> means the emitter does not log in a
+    /// recognised format.
+    #[prost(enumeration="LogSeverity", tag="4")]
+    pub level: i32,
+    /// The log text, with ANSI escape sequences removed, continuation lines re-joined, and secrets redacted
+    /// server-side.
+    #[prost(string, tag="5")]
+    pub message: ::prost::alloc::string::String,
+    /// What produced the log stream this entry belongs to.
+    #[prost(enumeration="CaiLogSource", tag="6")]
+    pub log_source: i32,
+    /// Which output channel the record arrived on.
+    #[prost(enumeration="CaiLogStreamChannel", tag="7")]
+    pub channel: i32,
+    /// <code>&lt;module&gt;:&lt;function&gt;:&lt;line&gt;</code> of the emitting log statement. Empty for output
+    /// that is not in the ONDEWO logging format.
+    #[prost(string, tag="8")]
+    pub emitter: ::prost::alloc::string::String,
+    /// Name of the thread that emitted the record. Empty when not available.
+    #[prost(string, tag="9")]
+    pub thread_name: ::prost::alloc::string::String,
+    /// Name of the process that emitted the record, e.g. <code>GrpcServer_3</code> for a CAI worker. Empty when
+    /// not available.
+    #[prost(string, tag="10")]
+    pub process_name: ::prost::alloc::string::String,
+    /// Resource name of the log stream this entry belongs to. The format is
+    /// <pre><code>logStreams/&lt;log_stream_uuid&gt;</code></pre> for a stream that belongs to no project (a
+    /// server process) and <pre><code>projects/&lt;project_uuid&gt;/logStreams/&lt;log_stream_uuid&gt;</code></pre>
+    /// for one that does (an operation&apos;s container).
+    #[prost(string, tag="11")]
+    pub log_stream: ::prost::alloc::string::String,
+    /// Name of the long-running operation the record belongs to. Empty for a server record emitted outside any
+    /// operation. The format is <pre><code>projects/&lt;project_uuid&gt;/operations/&lt;operation_uuid&gt;</code></pre>
+    /// for a project operation.
+    #[prost(string, tag="12")]
+    pub operation_name: ::prost::alloc::string::String,
+    /// The project the record belongs to. Empty for a server record emitted outside any project RPC or
+    /// operation. The format is <pre><code>projects/&lt;project_uuid&gt;/agent</code></pre>
+    #[prost(string, tag="13")]
+    pub project_parent: ::prost::alloc::string::String,
+    /// Docker container id of the container the record came from. Empty for a server record.
+    #[prost(string, tag="14")]
+    pub container_id: ::prost::alloc::string::String,
+    /// Docker container name of the container the record came from. Empty for a server record.
+    #[prost(string, tag="15")]
+    pub container_name: ::prost::alloc::string::String,
+    /// Identity of the CAI server process that captured the record (<code>&lt;hostname&gt;:&lt;pid&gt;</code> or
+    /// the configured <code>ONDEWO_NLU_CAI_REPLICA_ID</code>).
+    #[prost(string, tag="16")]
+    pub replica_id: ::prost::alloc::string::String,
+    /// OpenTelemetry trace id (32 lowercase hex characters) active when a server record was emitted. Empty when
+    /// no trace was active and for container records.
+    #[prost(string, tag="17")]
+    pub trace_id: ::prost::alloc::string::String,
+    /// How many physical lines were folded into <code>message</code>. <code>1</code> for an ordinary single-line
+    /// record.
+    #[prost(int32, tag="18")]
+    pub physical_line_count: i32,
+    /// Type of the operation named by <code>operation_name</code>; <code>UNSPECIFIED</code> when none.
+    #[prost(enumeration="operation_metadata::OperationType", tag="19")]
+    pub operation_type: i32,
+    /// Lifecycle phase of the container the record came from, e.g. <code>hw_check</code>,
+    /// <code>gpu_prealloc</code>, <code>build_cache</code>, <code>train</code>, <code>rag_crawl</code>. Empty for a
+    /// server record.
+    #[prost(string, tag="20")]
+    pub phase: ::prost::alloc::string::String,
+}
+/// Narrows a log query. Every field is optional; an empty repeated field means &quot;do not filter on
+/// this&quot;. Fields are combined with AND; the values within one repeated field are combined with OR.
+///
+/// <p>Filters fall into two groups. IDENTITY filters (fields 1 to 19) select which log streams, operations and
+/// projects are of interest. CONTENT filters (fields 20 to 30) select which entries of those to return. The time
+/// window (fields 31, 32) is neither.</p>
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CaiLogFilter {
+    // ////////////////////////////////////////////////////////////////////////////
+    // Identity filters
+    // ////////////////////////////////////////////////////////////////////////////
+
+    /// Log stream resource names, in either form of
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry.log_stream</a>.
+    #[prost(string, repeated, tag="1")]
+    pub log_stream_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Operation names, e.g. <pre><code>projects/&lt;project_uuid&gt;/operations/&lt;operation_uuid&gt;</code></pre>
+    #[prost(string, repeated, tag="2")]
+    pub operation_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Also match the sub-operations of every operation in <code>operation_names</code> (a training operation
+    /// runs one sub-operation per algorithm). Defaults to <code>false</code>.
+    #[prost(bool, tag="3")]
+    pub include_sub_operations: bool,
+    /// Project parents of the form <pre><code>projects/&lt;project_uuid&gt;/agent</code></pre>
+    #[prost(string, repeated, tag="4")]
+    pub project_parents: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Docker container ids.
+    #[prost(string, repeated, tag="5")]
+    pub container_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Docker container names.
+    #[prost(string, repeated, tag="6")]
+    pub container_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Identities of the CAI server processes that captured the entries (see
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry.replica_id</a>).
+    #[prost(string, repeated, tag="7")]
+    pub replica_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Operation types.
+    #[prost(enumeration="operation_metadata::OperationType", repeated, tag="8")]
+    pub operation_types: ::prost::alloc::vec::Vec<i32>,
+    /// Container lifecycle phases, e.g. <code>train</code> or <code>hw_check</code>.
+    #[prost(string, repeated, tag="9")]
+    pub phases: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    // ////////////////////////////////////////////////////////////////////////////
+    // Content filters
+    // ////////////////////////////////////////////////////////////////////////////
+
+    /// Restrict to entries of log streams produced by these sources.
+    #[prost(enumeration="CaiLogSource", repeated, tag="20")]
+    pub log_sources: ::prost::alloc::vec::Vec<i32>,
+    /// Restrict to entries that arrived on these channels.
+    #[prost(enumeration="CaiLogStreamChannel", repeated, tag="21")]
+    pub channels: ::prost::alloc::vec::Vec<i32>,
+    /// Only return entries at or above this severity. <code>LOG_SEVERITY_UNSPECIFIED</code> (the default)
+    /// applies no lower bound. Ignored when <code>log_levels</code> is non-empty.
+    #[prost(enumeration="LogSeverity", tag="22")]
+    pub min_log_level: i32,
+    /// Exact severities to include. When non-empty this OVERRIDES <code>min_log_level</code>.
+    #[prost(enumeration="LogSeverity", repeated, tag="23")]
+    pub log_levels: ::prost::alloc::vec::Vec<i32>,
+    /// Keep entries whose severity could not be determined even when a severity bound is set. Defaults to
+    /// <code>false</code>.
+    #[prost(bool, optional, tag="24")]
+    pub include_unleveled_lines: ::core::option::Option<bool>,
+    /// Case-insensitive substring match against the message, as the caller receives it (after the server&apos;s
+    /// secret redaction). <code>ListLogsResponse.total_matching_count</code>, <code>count_by_level</code>,
+    /// <code>has_more_older</code> and <code>has_more_newer</code> are computed WITHOUT it and
+    /// <code>CAI_LOG_FILTER_FIELD_TEXT</code> is reported in <code>scope_limited_filters</code>: they would
+    /// otherwise reveal whether a redacted secret contains the searched text.
+    #[prost(string, optional, tag="25")]
+    pub text: ::core::option::Option<::prost::alloc::string::String>,
+    /// Regular expression (Python <code>re</code> syntax) matched against the message. At most 512 characters; an
+    /// invalid, oversized or catastrophically backtracking pattern is rejected with <code>INVALID_ARGUMENT</code>.
+    #[prost(string, optional, tag="26")]
+    pub regex: ::core::option::Option<::prost::alloc::string::String>,
+    /// Prefix match against <code>&lt;module&gt;:&lt;function&gt;:&lt;line&gt;</code>, for example
+    /// <code>ondewo_cai.ondewo_cdls.services.server.servicers.agents_servicer</code>.
+    #[prost(string, repeated, tag="27")]
+    pub emitter_prefixes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Restrict to entries emitted by these threads.
+    #[prost(string, repeated, tag="28")]
+    pub thread_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Restrict to entries emitted by these processes, e.g. <code>GrpcServer_0</code>.
+    #[prost(string, repeated, tag="29")]
+    pub process_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Restrict to entries carrying one of these OpenTelemetry trace ids (32 lowercase hex characters).
+    #[prost(string, repeated, tag="30")]
+    pub trace_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    // ////////////////////////////////////////////////////////////////////////////
+    // Time window
+    // ////////////////////////////////////////////////////////////////////////////
+
+    /// Only return entries at or after this instant. A zero timestamp counts as unset.
+    #[prost(message, optional, tag="31")]
+    pub start_time: ::core::option::Option<::prost_types::Timestamp>,
+    /// Only return entries at or before this instant. A zero timestamp counts as unset. A <code>start_time</code>
+    /// after <code>end_time</code> is rejected with <code>INVALID_ARGUMENT</code>.
+    #[prost(message, optional, tag="32")]
+    pub end_time: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// One capture of one server process or of one container. A server process that restarts, and a container
+/// recreated under a new id, yield a NEW log stream.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CaiLogStream {
+    /// Resource name of the log stream, in the form of
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry.log_stream</a>.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// What produced the log stream.
+    #[prost(enumeration="CaiLogSource", tag="2")]
+    pub log_source: i32,
+    /// The channel this stream captures.
+    #[prost(enumeration="CaiLogStreamChannel", tag="3")]
+    pub channel: i32,
+    /// The project the stream belongs to (<code>projects/&lt;project_uuid&gt;/agent</code>). Empty for a server
+    /// process.
+    #[prost(string, tag="4")]
+    pub project_parent: ::prost::alloc::string::String,
+    /// The operation the container serves. Empty for a server process.
+    #[prost(string, tag="5")]
+    pub operation_name: ::prost::alloc::string::String,
+    /// Docker container id. Empty for a server process.
+    #[prost(string, tag="6")]
+    pub container_id: ::prost::alloc::string::String,
+    /// Docker container name. Empty for a server process.
+    #[prost(string, tag="7")]
+    pub container_name: ::prost::alloc::string::String,
+    /// The host the container runs on, or the host name of the server process.
+    #[prost(string, tag="8")]
+    pub host: ::prost::alloc::string::String,
+    /// Identity of the CAI server process that captures (or captured) this stream.
+    #[prost(string, tag="9")]
+    pub replica_id: ::prost::alloc::string::String,
+    /// Name of the captured server process, e.g. <code>GrpcServer_3</code>. Empty for a container.
+    #[prost(string, tag="10")]
+    pub process_name: ::prost::alloc::string::String,
+    /// Lifecycle phase of the container. Empty for a server process.
+    #[prost(string, tag="11")]
+    pub phase: ::prost::alloc::string::String,
+    /// State of CAI&apos;s capture of this stream.
+    #[prost(enumeration="CaiLogCaptureState", tag="12")]
+    pub capture_state: i32,
+    /// Why capture failed, when <code>capture_state</code> is <code>CAI_LOG_CAPTURE_STATE_FAILED</code>.
+    #[prost(string, tag="13")]
+    pub capture_error: ::prost::alloc::string::String,
+    /// When CAI started capturing this stream.
+    #[prost(message, optional, tag="14")]
+    pub capture_started_at: ::core::option::Option<::prost_types::Timestamp>,
+    /// When CAI stopped capturing this stream. Unset while capturing.
+    #[prost(message, optional, tag="15")]
+    pub capture_finished_at: ::core::option::Option<::prost_types::Timestamp>,
+    /// True when entries the source emitted were not captured and are not recoverable, e.g. a container whose
+    /// owning CAI process died and whose output was recovered from a bounded snapshot.
+    #[prost(bool, tag="16")]
+    pub partial_capture: bool,
+    /// The smallest <code>seq</code> currently stored for this stream (<code>0</code> when it holds none).
+    #[prost(int64, tag="17")]
+    pub min_available_seq: i64,
+    /// The largest <code>seq</code> assigned to this stream (<code>0</code> when it holds no entry). Entries up to
+    /// it may since have been removed by retention or <code>DeleteLogs</code>; it never decreases while the
+    /// stream holds an entry.
+    #[prost(int64, tag="18")]
+    pub max_available_seq: i64,
+    /// How many entries are currently stored for this stream.
+    #[prost(int64, tag="19")]
+    pub line_count: i64,
+    /// How many records were deliberately not stored, summed over every reason: the ingest severity floor, the
+    /// capture queue being full, storage back-pressure, a failed write and retention.
+    #[prost(int64, tag="20")]
+    pub dropped_line_count: i64,
+    /// Type of the operation the container serves; <code>UNSPECIFIED</code> for a server process.
+    #[prost(enumeration="operation_metadata::OperationType", tag="21")]
+    pub operation_type: i32,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.StreamLogs">Logs.StreamLogs</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StreamLogsRequest {
+    /// Optional. A filter to narrow the stream down to the entries of interest. The time window of the filter is
+    /// meaningless for a live stream and is rejected with <code>INVALID_ARGUMENT</code> rather than ignored.
+    #[prost(message, optional, tag="1")]
+    pub filter: ::core::option::Option<CaiLogFilter>,
+    /// Replay at most this many of the most recent stored entries before switching to live follow.
+    /// <code>0</code> (the default) starts the follow with no historical replay; a negative value is treated as
+    /// <code>0</code>; values above the server hard cap (<code>ONDEWO_NLU_CAI_LOG_HARD_MAX_LINES</code>, default
+    /// 50000) are clamped to it. Applied to the FILTERED result. Ignored when <code>resume_token</code> or
+    /// <code>after_seq</code> is set.
+    #[prost(int32, optional, tag="2")]
+    pub tail_lines: ::core::option::Option<i32>,
+    /// Optional. Resume exactly where a previous stream or page stopped. An opaque, server-encoded
+    /// per-log-stream cursor that must be echoed back verbatim. Prefer it over <code>after_seq</code>.
+    #[prost(string, optional, tag="3")]
+    pub resume_token: ::core::option::Option<::prost::alloc::string::String>,
+    /// Optional. Resume after this <code>seq</code>. Valid ONLY when the filter resolves to exactly one log
+    /// stream; otherwise the request is rejected with <code>INVALID_ARGUMENT</code>. Ignored when
+    /// <code>resume_token</code> is set.
+    #[prost(int64, optional, tag="4")]
+    pub after_seq: ::core::option::Option<i64>,
+    /// Optional. Partial response: the field paths to populate in every streamed
+    /// <code>CaiLogEntry</code>, relative to <code>CaiLogEntry</code> (no <code>log_entries.</code> prefix).
+    /// <code>log_stream</code> and <code>seq</code> are always populated. Unset or empty streams every field. An
+    /// unknown path, or a path below a repeated field, is rejected with <code>INVALID_ARGUMENT</code> naming it.
+    /// Applied after the server&apos;s secret redaction; never affects the envelope fields.
+    #[prost(message, optional, tag="5")]
+    pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+}
+/// The response message for <a href="index.html#ondewo.nlu.Logs.StreamLogs">Logs.StreamLogs</a>. The stream
+/// carries an envelope rather than a bare entry so that a viewer can tell a healthy quiet source from a capture
+/// that has died.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamLogsResponse {
+    /// The entries in this batch, oldest first. May be empty, e.g. on the final message.
+    #[prost(message, repeated, tag="1")]
+    pub log_entries: ::prost::alloc::vec::Vec<CaiLogEntry>,
+    /// The capture state of the log streams being followed, aggregated: <code>FAILED</code> if any has failed,
+    /// else <code>DETACHED</code> if any is detached, else <code>CAPTURING</code> if any is capturing, else
+    /// <code>STOPPED</code>.
+    #[prost(enumeration="CaiLogCaptureState", tag="2")]
+    pub capture_state: i32,
+    /// Why capture failed, when <code>capture_state</code> is <code>CAI_LOG_CAPTURE_STATE_FAILED</code>.
+    #[prost(string, tag="3")]
+    pub capture_error: ::prost::alloc::string::String,
+    /// Total records deliberately not stored across the followed streams. See
+    /// <a href="index.html#ondewo.nlu.CaiLogStream">CaiLogStream.dropped_line_count</a>.
+    #[prost(int64, tag="4")]
+    pub dropped_line_count: i64,
+    /// Cursor to resume this stream. Echo it into <code>StreamLogsRequest.resume_token</code> after a disconnect.
+    #[prost(string, tag="5")]
+    pub resume_token: ::prost::alloc::string::String,
+    /// Set on the final message when the stream was ended by the server. Human-readable text, not a contract:
+    /// match on <code>end_reason_code</code>.
+    #[prost(string, tag="6")]
+    pub end_reason: ::prost::alloc::string::String,
+    /// Set on the final message when the stream was ended by the server, together with <code>end_reason</code>;
+    /// <code>CAI_LOG_STREAM_END_REASON_UNSPECIFIED</code> on every other message.
+    #[prost(enumeration="CaiLogStreamEndReason", tag="7")]
+    pub end_reason_code: i32,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.ListLogs">Logs.ListLogs</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListLogsRequest {
+    /// Optional. A filter to narrow the response down to the entries of interest.
+    #[prost(message, optional, tag="1")]
+    pub filter: ::core::option::Option<CaiLogFilter>,
+    /// Return at most this many entries. <code>0</code> (the default) and negative values apply the server
+    /// default (<code>ONDEWO_NLU_CAI_LOG_DEFAULT_MAX_LINES</code>, default 5000); values above the server hard cap
+    /// (<code>ONDEWO_NLU_CAI_LOG_HARD_MAX_LINES</code>, default 50000) are clamped to it.
+    #[prost(int32, optional, tag="2")]
+    pub max_lines: ::core::option::Option<i32>,
+    /// Optional cursor for infinite-scroll UP: return the newest entries with <code>seq</code> less than this
+    /// value. Valid only when the filter resolves to exactly one log stream.
+    #[prost(int64, optional, tag="3")]
+    pub before_seq: ::core::option::Option<i64>,
+    /// Optional cursor for infinite-scroll DOWN: return entries with <code>seq</code> greater than this value.
+    /// Valid only when the filter resolves to exactly one log stream.
+    #[prost(int64, optional, tag="4")]
+    pub after_seq: ::core::option::Option<i64>,
+    /// Optional. An opaque, server-encoded per-log-stream cursor from a previous response. Use this instead of
+    /// <code>after_seq</code> whenever the filter can match more than one log stream. Combined with
+    /// <code>oldest_first</code> it walks forward (newer entries); without it, backward (older entries).
+    #[prost(string, optional, tag="5")]
+    pub resume_token: ::core::option::Option<::prost::alloc::string::String>,
+    /// Walk forward from the cursor oldest-first instead of returning the most recent window. A client paging
+    /// through a whole backlog must set this: the default window silently skips everything between the cursor
+    /// and the newest entries.
+    #[prost(bool, optional, tag="6")]
+    pub oldest_first: ::core::option::Option<bool>,
+    /// Optional. Partial response: the field paths to populate in every returned <code>CaiLogEntry</code>,
+    /// relative to <code>CaiLogEntry</code> (no <code>log_entries.</code> prefix), e.g. <code>timestamp</code>,
+    /// <code>level</code>, <code>message</code>. <code>log_stream</code> and <code>seq</code> are always
+    /// populated. Unset or empty returns every field. An unknown path, or a path below a repeated field, is
+    /// rejected with <code>INVALID_ARGUMENT</code> naming it. Applied after the server&apos;s secret redaction. It
+    /// shapes only the entries: the window and cursor fields of the response are computed exactly as without a
+    /// mask.
+    #[prost(message, optional, tag="7")]
+    pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+    /// Optional. Also count the matching entries: fills <code>ListLogsResponse.total_matching_count</code> and
+    /// <code>count_by_level</code> over the WHOLE filtered history (ignoring the cursors). Off by default; set it
+    /// on the first page only.
+    #[prost(bool, tag="8")]
+    pub include_counts: bool,
+}
+/// The response message for <a href="index.html#ondewo.nlu.Logs.ListLogs">Logs.ListLogs</a>.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListLogsResponse {
+    /// The matching entries, oldest first.
+    #[prost(message, repeated, tag="1")]
+    pub log_entries: ::prost::alloc::vec::Vec<CaiLogEntry>,
+    /// True when matching entries were dropped because <code>max_lines</code> was reached.
+    #[prost(bool, tag="2")]
+    pub truncated: bool,
+    /// The smallest <code>seq</code> available under the request&apos;s IDENTITY filters and the caller&apos;s
+    /// access. Deliberately not narrowed by the content filters.
+    #[prost(int64, tag="3")]
+    pub min_available_seq: i64,
+    /// The largest <code>seq</code> assigned under the request&apos;s identity filters and the caller&apos;s
+    /// access, over the log streams that still hold an entry (<code>0</code> when none does). Entries up to it may
+    /// since have been removed by retention or <code>DeleteLogs</code>.
+    #[prost(int64, tag="4")]
+    pub max_available_seq: i64,
+    /// True when entries older than this window exist.
+    #[prost(bool, tag="5")]
+    pub has_more_older: bool,
+    /// True when entries newer than this window exist.
+    #[prost(bool, tag="6")]
+    pub has_more_newer: bool,
+    /// Cursor to fetch the next window (pass it back with <code>oldest_first</code> to page forward, without it
+    /// to page backward), or to start a <code>StreamLogs</code> that continues exactly here.
+    #[prost(string, tag="7")]
+    pub next_resume_token: ::prost::alloc::string::String,
+    /// Filters that could only be applied WITHIN the returned window rather than across the whole history. A
+    /// client displaying a match count must qualify it when this is non-empty.
+    #[prost(enumeration="CaiLogFilterField", repeated, tag="8")]
+    pub scope_limited_filters: ::prost::alloc::vec::Vec<i32>,
+    /// The number of entries matching the filter over the whole stored history, regardless of the window and the
+    /// cursors. Set only when <code>include_counts</code> was requested and the count finished within
+    /// <code>ONDEWO_NLU_CAI_LOG_COUNT_TIMEOUT_S</code>. An UPPER BOUND when <code>scope_limited_filters</code> is
+    /// non-empty.
+    #[prost(int64, optional, tag="9")]
+    pub total_matching_count: ::core::option::Option<i64>,
+    /// The matching entries counted per severity, keyed by the <code>ondewo.nlu.LogSeverity</code> value NAME
+    /// (e.g. <code>LOG_SEVERITY_ERROR</code>; entries without a recognised severity under
+    /// <code>LOG_SEVERITY_UNSPECIFIED</code>). Severities with no entry are omitted; the values sum to
+    /// <code>total_matching_count</code>. Filled under the same conditions as <code>total_matching_count</code>.
+    #[prost(map="string, int64", tag="10")]
+    pub count_by_level: ::std::collections::HashMap<::prost::alloc::string::String, i64>,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.GetLogStream">Logs.GetLogStream</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLogStreamRequest {
+    /// The name of the log stream, in either form of
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry.log_stream</a>.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// Optional. Partial response: the <code>CaiLogStream</code> field paths to populate. <code>name</code> is
+    /// always populated, unset or empty returns every field, an unknown path is rejected with
+    /// <code>INVALID_ARGUMENT</code> naming it.
+    #[prost(message, optional, tag="2")]
+    pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.ListLogStreams">Logs.ListLogStreams</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListLogStreamsRequest {
+    /// Optional. A filter to narrow the response down to the log streams of interest. Only the identity fields
+    /// and <code>log_sources</code> / <code>channels</code> / <code>process_names</code> apply; the other
+    /// content fields and the time window are ignored.
+    #[prost(message, optional, tag="1")]
+    pub filter: ::core::option::Option<CaiLogFilter>,
+    /// Optional: The page token to support pagination.
+    /// Pagination allows you to retrieve a large result set in smaller, more manageable portions.
+    /// The page token is a string representing the current index and page size.
+    ///
+    /// Valid page token strings:
+    /// <ul>
+    ///    <li>&quot;&quot; (empty string) - Retrieves the first page.</li>
+    ///    <li>&quot;current_index-0--page_size-20&quot; - Retrieves the first page with a page size of 20.</li>
+    ///    <li>&quot;current_index-1--page_size-20&quot; - Retrieves the second page with a page size of 20.</li>
+    /// </ul>
+    ///
+    /// Index starts at 0. A page size above 1000 is clamped to 1000.
+    ///
+    /// Examples of valid page token strings:
+    /// <ul>
+    ///    <li>&quot;&quot;</li>
+    ///    <li>&quot;current_index-0--page_size-20&quot;</li>
+    ///    <li>&quot;current_index-1--page_size-20&quot;</li>
+    ///    <li>&quot;current_index-10--page_size-20&quot;</li>
+    /// </ul>
+    ///
+    /// Examples of invalid page token strings:
+    /// <ul>
+    ///    <li>&quot;1&quot;</li>
+    ///    <li>&quot;current_index--1--page_size-20&quot;</li>
+    ///    <li>&quot;current_index1--page_size-20&quot;</li>
+    ///    <li>&quot;current_index-1--page_size--20&quot;</li>
+    /// </ul>
+    #[prost(string, tag="2")]
+    pub page_token: ::prost::alloc::string::String,
+    /// Optional. Partial response: the field paths to populate in every returned <code>CaiLogStream</code>,
+    /// relative to <code>CaiLogStream</code> (no <code>log_streams.</code> prefix). <code>name</code> is always
+    /// populated. Unset or empty returns every field. An unknown path is rejected with
+    /// <code>INVALID_ARGUMENT</code> naming it.
+    #[prost(message, optional, tag="3")]
+    pub field_mask: ::core::option::Option<::prost_types::FieldMask>,
+    /// Optional. Only log streams in one of these capture states. Empty matches every state.
+    /// <code>CAI_LOG_CAPTURE_STATE_UNSPECIFIED</code> is rejected with <code>INVALID_ARGUMENT</code>.
+    #[prost(enumeration="CaiLogCaptureState", repeated, tag="4")]
+    pub capture_states: ::prost::alloc::vec::Vec<i32>,
+}
+/// The response message for <a href="index.html#ondewo.nlu.Logs.ListLogStreams">Logs.ListLogStreams</a>.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListLogStreamsResponse {
+    /// The log streams of this page, newest <code>capture_started_at</code> first.
+    #[prost(message, repeated, tag="1")]
+    pub log_streams: ::prost::alloc::vec::Vec<CaiLogStream>,
+    /// The next_page_token is used to retrieve the next page of a returned result, e.g.
+    /// <code>current_index-2--page_size-20</code>. Empty when there are no more results.
+    #[prost(string, tag="2")]
+    pub next_page_token: ::prost::alloc::string::String,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.ExportLogs">Logs.ExportLogs</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ExportLogsRequest {
+    /// The entries to export. Every field of <a href="index.html#ondewo.nlu.CaiLogFilter">CaiLogFilter</a>
+    /// applies, with the semantics of <code>ListLogs</code>. REQUIRED, with both <code>start_time</code> and
+    /// <code>end_time</code> set and <code>start_time</code> before <code>end_time</code>; otherwise
+    /// <code>INVALID_ARGUMENT</code>.
+    #[prost(message, optional, tag="1")]
+    pub filter: ::core::option::Option<CaiLogFilter>,
+    /// The file format. Unset means <code>CAI_LOG_EXPORT_FORMAT_TEXT</code>.
+    #[prost(enumeration="CaiLogExportFormat", tag="2")]
+    pub format: i32,
+    /// Include every field of each entry rather than only the timestamp, the severity and the message (see
+    /// <a href="index.html#ondewo.nlu.CaiLogExportFormat">CaiLogExportFormat</a>). Default <code>false</code>.
+    #[prost(bool, tag="3")]
+    pub include_metadata: bool,
+}
+/// One message of an <a href="index.html#ondewo.nlu.Logs.ExportLogs">ExportLogs</a> stream.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ExportLogsResponse {
+    /// The next bytes of the exported file, at most 1 MiB. Chunk boundaries carry no meaning: an entry, a line or
+    /// a multi-byte UTF-8 character may span two chunks. The last message may carry an empty chunk.
+    #[prost(bytes="vec", tag="1")]
+    pub chunk: ::prost::alloc::vec::Vec<u8>,
+    /// The number of entries exported so far, including those of this chunk.
+    #[prost(int64, tag="2")]
+    pub entry_count: i64,
+    /// True on the last message of a complete export. A stream that ends without a message carrying
+    /// <code>last = true</code> was cut off and its file is incomplete.
+    #[prost(bool, tag="3")]
+    pub last: bool,
+    /// True on the last message when the export stopped early because it reached
+    /// <code>ONDEWO_NLU_CAI_LOG_EXPORT_MAX_ENTRIES</code>, <code>ONDEWO_NLU_CAI_LOG_EXPORT_MAX_BYTES</code> or the
+    /// maximum stream duration.
+    #[prost(bool, tag="4")]
+    pub truncated: bool,
+}
+/// The request message for <a href="index.html#ondewo.nlu.Logs.DeleteLogs">Logs.DeleteLogs</a>.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteLogsRequest {
+    /// The entries to delete. Only the identity fields and the time window apply; content filters are rejected.
+    /// At least one field must be set: an empty filter is rejected rather than treated as &quot;delete
+    /// everything&quot;.
+    #[prost(message, optional, tag="1")]
+    pub filter: ::core::option::Option<CaiLogFilter>,
+    /// Optional. Validate only: run every check of a real deletion and report how many entries and log streams
+    /// WOULD be deleted now, but delete nothing. Default <code>false</code>.
+    #[prost(bool, tag="2")]
+    pub validate_only: bool,
+}
+/// The response message for <a href="index.html#ondewo.nlu.Logs.DeleteLogs">Logs.DeleteLogs</a>.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteLogsResponse {
+    /// How many log entries were deleted (with <code>validate_only</code>: would be deleted).
+    #[prost(int64, tag="1")]
+    pub deleted_log_entry_count: i64,
+    /// How many log streams were deleted because no entries remained (with <code>validate_only</code>: would be
+    /// deleted).
+    #[prost(int64, tag="2")]
+    pub deleted_log_stream_count: i64,
+}
+// ////////////////////////////////////////////////////////////////////////////
+// region Enums
+// ////////////////////////////////////////////////////////////////////////////
+
+/// What produced a log stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogSource {
+    /// Unspecified or unrecognised source.
+    Unspecified = 0,
+    /// A CAI gRPC server process (one worker of one replica) logging through its own logger.
+    Server = 1,
+    /// The docker container a remote operation runs (build cache, training, RAG crawl, LLM evaluation or
+    /// simulation, RAGFlow upload / removal / re-parse).
+    RemoteOperationContainer = 2,
+    /// A short-lived helper container a remote operation starts before its main container: the hardware check
+    /// (phase <code>hw_check</code>) and the GPU pre-allocation (phase <code>gpu_prealloc</code>).
+    HelperContainer = 3,
+}
+impl CaiLogSource {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_SOURCE_UNSPECIFIED",
+            Self::Server => "CAI_LOG_SOURCE_SERVER",
+            Self::RemoteOperationContainer => "CAI_LOG_SOURCE_REMOTE_OPERATION_CONTAINER",
+            Self::HelperContainer => "CAI_LOG_SOURCE_HELPER_CONTAINER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_SOURCE_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_SOURCE_SERVER" => Some(Self::Server),
+            "CAI_LOG_SOURCE_REMOTE_OPERATION_CONTAINER" => Some(Self::RemoteOperationContainer),
+            "CAI_LOG_SOURCE_HELPER_CONTAINER" => Some(Self::HelperContainer),
+            _ => None,
+        }
+    }
+}
+/// The output channel a log stream captures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogStreamChannel {
+    /// The channel is not known. This is the honest value for a container started with a TTY (every remote
+    /// operation container is), where the pseudo-terminal merges both channels into one stream.
+    Unspecified = 0,
+    /// Standard output.
+    Stdout = 1,
+    /// Standard error. The CAI server process logs here.
+    Stderr = 2,
+}
+impl CaiLogStreamChannel {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_STREAM_CHANNEL_UNSPECIFIED",
+            Self::Stdout => "CAI_LOG_STREAM_CHANNEL_STDOUT",
+            Self::Stderr => "CAI_LOG_STREAM_CHANNEL_STDERR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_STREAM_CHANNEL_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_STREAM_CHANNEL_STDOUT" => Some(Self::Stdout),
+            "CAI_LOG_STREAM_CHANNEL_STDERR" => Some(Self::Stderr),
+            _ => None,
+        }
+    }
+}
+/// The state of CAI&apos;s capture of one log stream. This describes the CAPTURE, not the process or the
+/// container.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogCaptureState {
+    /// Unspecified.
+    Unspecified = 0,
+    /// Capture is running.
+    Capturing = 1,
+    /// Capture ended cleanly; the stream is complete up to the end of the process or the removal of the
+    /// container.
+    Stopped = 2,
+    /// Capture failed or its owner stopped renewing it. The stored history may be incomplete and
+    /// <code>capture_error</code> says why.
+    Failed = 3,
+    /// Another CAI server process holds the capture of this stream.
+    Detached = 4,
+}
+impl CaiLogCaptureState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_CAPTURE_STATE_UNSPECIFIED",
+            Self::Capturing => "CAI_LOG_CAPTURE_STATE_CAPTURING",
+            Self::Stopped => "CAI_LOG_CAPTURE_STATE_STOPPED",
+            Self::Failed => "CAI_LOG_CAPTURE_STATE_FAILED",
+            Self::Detached => "CAI_LOG_CAPTURE_STATE_DETACHED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_CAPTURE_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_CAPTURE_STATE_CAPTURING" => Some(Self::Capturing),
+            "CAI_LOG_CAPTURE_STATE_STOPPED" => Some(Self::Stopped),
+            "CAI_LOG_CAPTURE_STATE_FAILED" => Some(Self::Failed),
+            "CAI_LOG_CAPTURE_STATE_DETACHED" => Some(Self::Detached),
+            _ => None,
+        }
+    }
+}
+/// Identifies a field of <a href="index.html#ondewo.nlu.CaiLogFilter">CaiLogFilter</a>. Used by
+/// <a href="index.html#ondewo.nlu.ListLogsResponse">ListLogsResponse.scope_limited_filters</a> to declare which
+/// filters could only be applied inside the returned window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogFilterField {
+    /// Unspecified.
+    Unspecified = 0,
+    /// <code>CaiLogFilter.text</code>.
+    Text = 1,
+    /// <code>CaiLogFilter.regex</code>.
+    Regex = 2,
+    /// <code>CaiLogFilter.log_sources</code>.
+    LogSources = 3,
+    /// <code>CaiLogFilter.emitter_prefixes</code>.
+    EmitterPrefixes = 4,
+    /// <code>CaiLogFilter.thread_names</code>.
+    ThreadNames = 5,
+    /// <code>CaiLogFilter.process_names</code>.
+    ProcessNames = 6,
+}
+impl CaiLogFilterField {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_FILTER_FIELD_UNSPECIFIED",
+            Self::Text => "CAI_LOG_FILTER_FIELD_TEXT",
+            Self::Regex => "CAI_LOG_FILTER_FIELD_REGEX",
+            Self::LogSources => "CAI_LOG_FILTER_FIELD_LOG_SOURCES",
+            Self::EmitterPrefixes => "CAI_LOG_FILTER_FIELD_EMITTER_PREFIXES",
+            Self::ThreadNames => "CAI_LOG_FILTER_FIELD_THREAD_NAMES",
+            Self::ProcessNames => "CAI_LOG_FILTER_FIELD_PROCESS_NAMES",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_FILTER_FIELD_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_FILTER_FIELD_TEXT" => Some(Self::Text),
+            "CAI_LOG_FILTER_FIELD_REGEX" => Some(Self::Regex),
+            "CAI_LOG_FILTER_FIELD_LOG_SOURCES" => Some(Self::LogSources),
+            "CAI_LOG_FILTER_FIELD_EMITTER_PREFIXES" => Some(Self::EmitterPrefixes),
+            "CAI_LOG_FILTER_FIELD_THREAD_NAMES" => Some(Self::ThreadNames),
+            "CAI_LOG_FILTER_FIELD_PROCESS_NAMES" => Some(Self::ProcessNames),
+            _ => None,
+        }
+    }
+}
+/// Why the SERVER ended a <code>StreamLogs</code> stream. Carried by the final
+/// <a href="index.html#ondewo.nlu.StreamLogsResponse">StreamLogsResponse</a> beside the human-readable
+/// <code>end_reason</code>. A stream ended by the client has no final message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogStreamEndReason {
+    /// Not ended by the server: every message except the final one.
+    Unspecified = 0,
+    /// The capture of every followed log stream has terminated (<code>STOPPED</code> or <code>FAILED</code>) and
+    /// every stored entry was sent. Nothing more will arrive for this filter.
+    AllCapturesTerminated = 1,
+    /// The server-side maximum stream duration (<code>ONDEWO_NLU_CAI_LOG_STREAM_MAX_DURATION_S</code>) was
+    /// reached. Reconnect with the <code>resume_token</code> of the final message to continue seamlessly.
+    MaxDuration = 2,
+    /// The CAI server process is shutting down. Reconnect, to another replica if there is one, with the
+    /// <code>resume_token</code>.
+    ServerShutdown = 3,
+    /// The caller lost the access the stream requires. The stream then ends with <code>PERMISSION_DENIED</code>.
+    PermissionRevoked = 4,
+    /// The caller&apos;s credential expired. The stream then ends with <code>UNAUTHENTICATED</code>; reconnect
+    /// with a fresh credential and the <code>resume_token</code>.
+    CredentialsExpired = 5,
+}
+impl CaiLogStreamEndReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_STREAM_END_REASON_UNSPECIFIED",
+            Self::AllCapturesTerminated => "CAI_LOG_STREAM_END_REASON_ALL_CAPTURES_TERMINATED",
+            Self::MaxDuration => "CAI_LOG_STREAM_END_REASON_MAX_DURATION",
+            Self::ServerShutdown => "CAI_LOG_STREAM_END_REASON_SERVER_SHUTDOWN",
+            Self::PermissionRevoked => "CAI_LOG_STREAM_END_REASON_PERMISSION_REVOKED",
+            Self::CredentialsExpired => "CAI_LOG_STREAM_END_REASON_CREDENTIALS_EXPIRED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_STREAM_END_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_STREAM_END_REASON_ALL_CAPTURES_TERMINATED" => Some(Self::AllCapturesTerminated),
+            "CAI_LOG_STREAM_END_REASON_MAX_DURATION" => Some(Self::MaxDuration),
+            "CAI_LOG_STREAM_END_REASON_SERVER_SHUTDOWN" => Some(Self::ServerShutdown),
+            "CAI_LOG_STREAM_END_REASON_PERMISSION_REVOKED" => Some(Self::PermissionRevoked),
+            "CAI_LOG_STREAM_END_REASON_CREDENTIALS_EXPIRED" => Some(Self::CredentialsExpired),
+            _ => None,
+        }
+    }
+}
+/// File format of an <a href="index.html#ondewo.nlu.Logs.ExportLogs">ExportLogs</a> export. Every format is UTF-8
+/// with <code>\n</code> line endings and one entry per record; a multi-line entry stays one record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CaiLogExportFormat {
+    /// Unspecified: identical to <code>CAI_LOG_EXPORT_FORMAT_TEXT</code>.
+    Unspecified = 0,
+    /// Plain text in the manner of <code>docker logs --timestamps</code>: one line per entry,
+    /// <code>&lt;RFC 3339 UTC timestamp&gt; &lt;message&gt;</code>; continuation lines of a multi-line entry are
+    /// indented by one tab. With <code>include_metadata</code> the timestamp is followed by the severity, the
+    /// process or container name and the operation name (<code>-</code> when none), separated by single spaces.
+    Text = 1,
+    /// Newline-delimited JSON: one JSON object per line, the proto3 JSON form of a
+    /// <a href="index.html#ondewo.nlu.CaiLogEntry">CaiLogEntry</a> (lowerCamelCase keys). Without
+    /// <code>include_metadata</code> only <code>seq</code>, <code>logStream</code>, <code>timestamp</code>,
+    /// <code>level</code> and <code>message</code> are written; with it every field.
+    Ndjson = 2,
+    /// Comma-separated values (RFC 4180, every field quoted, embedded quotes doubled, embedded line breaks kept
+    /// inside the quotes), with a header row. Columns without <code>include_metadata</code>:
+    /// <code>timestamp,level,message</code>; with it: <code>seq,timestamp,timestamp_is_exact,level,log_source,
+    /// channel,emitter,thread_name,process_name,log_stream,operation_name,operation_type,project_parent,
+    /// container_id,container_name,replica_id,trace_id,physical_line_count,message</code>.
+    Csv = 3,
+}
+impl CaiLogExportFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CAI_LOG_EXPORT_FORMAT_UNSPECIFIED",
+            Self::Text => "CAI_LOG_EXPORT_FORMAT_TEXT",
+            Self::Ndjson => "CAI_LOG_EXPORT_FORMAT_NDJSON",
+            Self::Csv => "CAI_LOG_EXPORT_FORMAT_CSV",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CAI_LOG_EXPORT_FORMAT_UNSPECIFIED" => Some(Self::Unspecified),
+            "CAI_LOG_EXPORT_FORMAT_TEXT" => Some(Self::Text),
+            "CAI_LOG_EXPORT_FORMAT_NDJSON" => Some(Self::Ndjson),
+            "CAI_LOG_EXPORT_FORMAT_CSV" => Some(Self::Csv),
             _ => None,
         }
     }

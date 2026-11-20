@@ -15407,6 +15407,82 @@ pub mod sessions_client {
                 .insert(GrpcMethod::new("ondewo.nlu.Sessions", "StreamingDetectIntent"));
             self.inner.streaming(req, path, codec).await
         }
+        pub async fn interrupt_turn(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InterruptTurnRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InterruptTurnResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Sessions/InterruptTurn",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Sessions", "InterruptTurn"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn prepare_warm_transfer_intro(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PrepareWarmTransferIntroRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PrepareWarmTransferIntroResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Sessions/PrepareWarmTransferIntro",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ondewo.nlu.Sessions", "PrepareWarmTransferIntro"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_warm_transfer_intro_outcome(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetWarmTransferIntroOutcomeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WarmTransferIntroOutcome>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Sessions/GetWarmTransferIntroOutcome",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ondewo.nlu.Sessions", "GetWarmTransferIntroOutcome"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn list_sessions(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSessionsRequest>,
@@ -16645,6 +16721,27 @@ pub mod sessions_server {
             tonic::Response<Self::StreamingDetectIntentStream>,
             tonic::Status,
         >;
+        async fn interrupt_turn(
+            &self,
+            request: tonic::Request<super::InterruptTurnRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InterruptTurnResponse>,
+            tonic::Status,
+        >;
+        async fn prepare_warm_transfer_intro(
+            &self,
+            request: tonic::Request<super::PrepareWarmTransferIntroRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PrepareWarmTransferIntroResponse>,
+            tonic::Status,
+        >;
+        async fn get_warm_transfer_intro_outcome(
+            &self,
+            request: tonic::Request<super::GetWarmTransferIntroOutcomeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WarmTransferIntroOutcome>,
+            tonic::Status,
+        >;
         async fn list_sessions(
             &self,
             request: tonic::Request<super::ListSessionsRequest>,
@@ -17089,6 +17186,154 @@ pub mod sessions_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Sessions/InterruptTurn" => {
+                    #[allow(non_camel_case_types)]
+                    struct InterruptTurnSvc<T: Sessions>(pub Arc<T>);
+                    impl<
+                        T: Sessions,
+                    > tonic::server::UnaryService<super::InterruptTurnRequest>
+                    for InterruptTurnSvc<T> {
+                        type Response = super::InterruptTurnResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InterruptTurnRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Sessions>::interrupt_turn(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = InterruptTurnSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Sessions/PrepareWarmTransferIntro" => {
+                    #[allow(non_camel_case_types)]
+                    struct PrepareWarmTransferIntroSvc<T: Sessions>(pub Arc<T>);
+                    impl<
+                        T: Sessions,
+                    > tonic::server::UnaryService<super::PrepareWarmTransferIntroRequest>
+                    for PrepareWarmTransferIntroSvc<T> {
+                        type Response = super::PrepareWarmTransferIntroResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::PrepareWarmTransferIntroRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Sessions>::prepare_warm_transfer_intro(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PrepareWarmTransferIntroSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Sessions/GetWarmTransferIntroOutcome" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetWarmTransferIntroOutcomeSvc<T: Sessions>(pub Arc<T>);
+                    impl<
+                        T: Sessions,
+                    > tonic::server::UnaryService<
+                        super::GetWarmTransferIntroOutcomeRequest,
+                    > for GetWarmTransferIntroOutcomeSvc<T> {
+                        type Response = super::WarmTransferIntroOutcome;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetWarmTransferIntroOutcomeRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Sessions>::get_warm_transfer_intro_outcome(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetWarmTransferIntroOutcomeSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
@@ -24207,6 +24452,678 @@ pub mod ai_services_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "ondewo.nlu.AiServices";
     impl<T> tonic::server::NamedService for AiServicesServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// Generated client implementations.
+pub mod logs_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct LogsClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl LogsClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> LogsClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> LogsClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            LogsClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn stream_logs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::StreamLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::StreamLogsResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Logs/StreamLogs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Logs", "StreamLogs"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn list_logs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListLogsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/ondewo.nlu.Logs/ListLogs");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("ondewo.nlu.Logs", "ListLogs"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_log_stream(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetLogStreamRequest>,
+        ) -> std::result::Result<tonic::Response<super::CaiLogStream>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Logs/GetLogStream",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Logs", "GetLogStream"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_log_streams(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListLogStreamsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListLogStreamsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Logs/ListLogStreams",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Logs", "ListLogStreams"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn export_logs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ExportLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ExportLogsResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Logs/ExportLogs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Logs", "ExportLogs"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn delete_logs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteLogsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ondewo.nlu.Logs/DeleteLogs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ondewo.nlu.Logs", "DeleteLogs"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod logs_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with LogsServer.
+    #[async_trait]
+    pub trait Logs: std::marker::Send + std::marker::Sync + 'static {
+        /// Server streaming response type for the StreamLogs method.
+        type StreamLogsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::StreamLogsResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn stream_logs(
+            &self,
+            request: tonic::Request<super::StreamLogsRequest>,
+        ) -> std::result::Result<tonic::Response<Self::StreamLogsStream>, tonic::Status>;
+        async fn list_logs(
+            &self,
+            request: tonic::Request<super::ListLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListLogsResponse>,
+            tonic::Status,
+        >;
+        async fn get_log_stream(
+            &self,
+            request: tonic::Request<super::GetLogStreamRequest>,
+        ) -> std::result::Result<tonic::Response<super::CaiLogStream>, tonic::Status>;
+        async fn list_log_streams(
+            &self,
+            request: tonic::Request<super::ListLogStreamsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListLogStreamsResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the ExportLogs method.
+        type ExportLogsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ExportLogsResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn export_logs(
+            &self,
+            request: tonic::Request<super::ExportLogsRequest>,
+        ) -> std::result::Result<tonic::Response<Self::ExportLogsStream>, tonic::Status>;
+        async fn delete_logs(
+            &self,
+            request: tonic::Request<super::DeleteLogsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteLogsResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct LogsServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> LogsServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for LogsServer<T>
+    where
+        T: Logs,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/ondewo.nlu.Logs/StreamLogs" => {
+                    #[allow(non_camel_case_types)]
+                    struct StreamLogsSvc<T: Logs>(pub Arc<T>);
+                    impl<
+                        T: Logs,
+                    > tonic::server::ServerStreamingService<super::StreamLogsRequest>
+                    for StreamLogsSvc<T> {
+                        type Response = super::StreamLogsResponse;
+                        type ResponseStream = T::StreamLogsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StreamLogsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::stream_logs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = StreamLogsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Logs/ListLogs" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListLogsSvc<T: Logs>(pub Arc<T>);
+                    impl<T: Logs> tonic::server::UnaryService<super::ListLogsRequest>
+                    for ListLogsSvc<T> {
+                        type Response = super::ListLogsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListLogsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::list_logs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListLogsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Logs/GetLogStream" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetLogStreamSvc<T: Logs>(pub Arc<T>);
+                    impl<T: Logs> tonic::server::UnaryService<super::GetLogStreamRequest>
+                    for GetLogStreamSvc<T> {
+                        type Response = super::CaiLogStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetLogStreamRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::get_log_stream(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetLogStreamSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Logs/ListLogStreams" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListLogStreamsSvc<T: Logs>(pub Arc<T>);
+                    impl<
+                        T: Logs,
+                    > tonic::server::UnaryService<super::ListLogStreamsRequest>
+                    for ListLogStreamsSvc<T> {
+                        type Response = super::ListLogStreamsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListLogStreamsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::list_log_streams(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListLogStreamsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Logs/ExportLogs" => {
+                    #[allow(non_camel_case_types)]
+                    struct ExportLogsSvc<T: Logs>(pub Arc<T>);
+                    impl<
+                        T: Logs,
+                    > tonic::server::ServerStreamingService<super::ExportLogsRequest>
+                    for ExportLogsSvc<T> {
+                        type Response = super::ExportLogsResponse;
+                        type ResponseStream = T::ExportLogsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ExportLogsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::export_logs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ExportLogsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ondewo.nlu.Logs/DeleteLogs" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteLogsSvc<T: Logs>(pub Arc<T>);
+                    impl<T: Logs> tonic::server::UnaryService<super::DeleteLogsRequest>
+                    for DeleteLogsSvc<T> {
+                        type Response = super::DeleteLogsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteLogsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Logs>::delete_logs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteLogsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for LogsServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "ondewo.nlu.Logs";
+    impl<T> tonic::server::NamedService for LogsServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

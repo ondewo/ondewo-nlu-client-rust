@@ -10999,6 +10999,9 @@ pub struct ReferencedChunk {
     /// For crawled documents link to the source document that directly jumps to the chunk's location on the page using a text fragment anchor (a bit fragile and might not always work). For any other document it is left empty.
     #[prost(string, tag="9")]
     pub deep_link_url: ::prost::alloc::string::String,
+    /// Title of the document (optional).
+    #[prost(string, tag="10")]
+    pub document_title: ::prost::alloc::string::String,
 }
 /// Represents the result of conversational query or event processing.
 #[derive(Clone, PartialEq, ::prost::Message)]
